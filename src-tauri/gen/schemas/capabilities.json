@@ -1,0 +1,1 @@
+{"chrome-capability":{"identifier":"chrome-capability","description":"Permissions for the trusted local browser chrome only.","local":true,"webviews":["chrome"],"permissions":["core:default","dialog:allow-save"]}}

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>Folio Browser</title>
+  </head>
+  <body>
+    <main id="app">
+      <header class="browser-bar" aria-label="Browser controls">
+        <div class="brand" aria-label="Folio Browser">
+          <span class="brand-mark">F</span>
+          <span class="brand-name">Folio</span>
+        </div>
+
+        <nav class="nav-controls" aria-label="Page navigation">
+          <button id="back-button" class="icon-button" type="button" title="Back (Alt+Left)" aria-label="Back">Back</button>
+          <button id="forward-button" class="icon-button" type="button" title="Forward (Alt+Right)" aria-label="Forward">Next</button>
+          <button id="reload-button" class="icon-button" type="button" title="Reload (Ctrl+R)" aria-label="Reload">Reload</button>
+          <button id="home-button" class="icon-button" type="button" title="Home" aria-label="Home">Home</button>
+        </nav>
+
+        <form id="address-form" class="address-form" role="search">
+          <span id="load-indicator" class="load-indicator" aria-hidden="true"></span>
+          <label class="sr-only" for="address-input">Address or DuckDuckGo search</label>
+          <input
+            id="address-input"
+            name="address"
+            type="text"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            placeholder="Enter an address or search DuckDuckGo"
+          />
+          <button class="go-button" type="submit">Go</button>
+        </form>
+
+        <button id="history-button" class="history-button" type="button" aria-expanded="false" aria-controls="history-panel">
+          History
+        </button>
+      </header>
+
+      <section id="history-panel" class="history-panel" aria-hidden="true">
+        <div class="ledger-heading">
+          <div>
+            <p class="eyebrow">The browsing ledger</p>
+            <h1>History</h1>
+            <p id="history-summary" class="history-summary">Every navigation attempt is kept on this device.</p>
+          </div>
+          <button id="close-history-button" class="close-button" type="button">Return to page</button>
+        </div>
+
+        <div class="history-tools">
+          <label class="history-search-label" for="history-search">Search the ledger</label>
+          <input id="history-search" type="search" placeholder="Title, URL, or exact search text" autocomplete="off" />
+          <div class="export-actions" aria-label="Export browsing history">
+            <button id="export-json-button" type="button">Export JSON</button>
+            <button id="export-csv-button" type="button">Export CSV</button>
+          </div>
+        </div>
+
+        <div id="history-list" class="history-list" aria-live="polite"></div>
+      </section>
+
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
