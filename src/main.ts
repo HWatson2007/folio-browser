@@ -44,6 +44,20 @@ let historyEntries: HistoryEntry[] = [];
 let historyOpen = false;
 let toastTimer: number | undefined;
 let resizeTimer: number | undefined;
+let searchTimer: number | undefined;
+
+const dayFormatter = new Intl.DateTimeFormat(undefined, {
+  weekday: "long",
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+});
+
+const timeFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
 
 function showToast(message: string): void {
   toast.textContent = message;
@@ -53,20 +67,11 @@ function showToast(message: string): void {
 }
 
 function formatDay(timestamp: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(new Date(timestamp));
+  return dayFormatter.format(new Date(timestamp));
 }
 
 function formatTime(timestamp: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(timestamp));
+  return timeFormatter.format(new Date(timestamp));
 }
 
 function displayTitle(entry: HistoryEntry): string {
@@ -212,7 +217,10 @@ byId<HTMLButtonElement>("reload-button").addEventListener("click", () => invoke(
 byId<HTMLButtonElement>("home-button").addEventListener("click", () => invoke("navigate_home"));
 historyButton.addEventListener("click", () => (historyOpen ? closeHistory() : openHistory()));
 byId<HTMLButtonElement>("close-history-button").addEventListener("click", closeHistory);
-historySearch.addEventListener("input", renderHistory);
+historySearch.addEventListener("input", () => {
+  window.clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(renderHistory, 800);
+});
 byId<HTMLButtonElement>("export-json-button").addEventListener("click", () => exportHistory("json"));
 byId<HTMLButtonElement>("export-csv-button").addEventListener("click", () => exportHistory("csv"));
 
