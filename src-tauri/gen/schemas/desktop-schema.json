@@ -177,6 +177,198 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the create_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-profile",
+          "markdownDescription": "Enables the create_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the current_url command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-current-url",
+          "markdownDescription": "Enables the current_url command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-profile",
+          "markdownDescription": "Enables the delete_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the export_history command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-export-history",
+          "markdownDescription": "Enables the export_history command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_current_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-current-profile",
+          "markdownDescription": "Enables the get_current_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_history command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-history",
+          "markdownDescription": "Enables the get_history command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the go_back command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-go-back",
+          "markdownDescription": "Enables the go_back command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the go_forward command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-go-forward",
+          "markdownDescription": "Enables the go_forward command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the launch_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-launch-profile",
+          "markdownDescription": "Enables the launch_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_profiles command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-profiles",
+          "markdownDescription": "Enables the list_profiles command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the navigate command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-navigate",
+          "markdownDescription": "Enables the navigate command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the navigate_home command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-navigate-home",
+          "markdownDescription": "Enables the navigate_home command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the reload command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-reload",
+          "markdownDescription": "Enables the reload command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the rename_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-rename-profile",
+          "markdownDescription": "Enables the rename_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_content_offset command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-content-offset",
+          "markdownDescription": "Enables the set_content_offset command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_content_visible command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-content-visible",
+          "markdownDescription": "Enables the set_content_visible command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-profile",
+          "markdownDescription": "Denies the create_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the current_url command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-current-url",
+          "markdownDescription": "Denies the current_url command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-profile",
+          "markdownDescription": "Denies the delete_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the export_history command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-export-history",
+          "markdownDescription": "Denies the export_history command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_current_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-current-profile",
+          "markdownDescription": "Denies the get_current_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_history command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-history",
+          "markdownDescription": "Denies the get_history command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the go_back command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-go-back",
+          "markdownDescription": "Denies the go_back command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the go_forward command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-go-forward",
+          "markdownDescription": "Denies the go_forward command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the launch_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-launch-profile",
+          "markdownDescription": "Denies the launch_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_profiles command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-profiles",
+          "markdownDescription": "Denies the list_profiles command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the navigate command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-navigate",
+          "markdownDescription": "Denies the navigate command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the navigate_home command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-navigate-home",
+          "markdownDescription": "Denies the navigate_home command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the reload command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-reload",
+          "markdownDescription": "Denies the reload command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the rename_profile command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-rename-profile",
+          "markdownDescription": "Denies the rename_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_content_offset command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-content-offset",
+          "markdownDescription": "Denies the set_content_offset command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_content_visible command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-content-visible",
+          "markdownDescription": "Denies the set_content_visible command without any pre-configured scope."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

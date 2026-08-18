@@ -24,6 +24,15 @@ interface NavigationEvent {
   title: string | null;
 }
 
+interface ProfileSummary {
+  id: string;
+  name: string;
+  color: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+  running: boolean;
+}
+
 const byId = <T extends HTMLElement>(id: string): T => {
   const element = document.getElementById(id);
   if (!element) throw new Error(`Missing element #${id}`);
@@ -38,7 +47,10 @@ const historySearch = byId<HTMLInputElement>("history-search");
 const historyList = byId<HTMLElement>("history-list");
 const historySummary = byId<HTMLElement>("history-summary");
 const loadIndicator = byId<HTMLElement>("load-indicator");
+const profileBadge = byId<HTMLElement>("profile-badge");
 const toast = byId<HTMLElement>("toast");
+
+let profileSlug = "profile";
 
 let historyEntries: HistoryEntry[] = [];
 let historyOpen = false;
@@ -180,8 +192,8 @@ async function closeHistory(): Promise<void> {
 
 async function exportHistory(format: "json" | "csv"): Promise<void> {
   const path = await save({
-    title: `Export browsing history as ${format.toUpperCase()}`,
-    defaultPath: `folio-history-${new Date().toISOString().slice(0, 10)}.${format}`,
+    title: `Export ${profileSlug} browsing history as ${format.toUpperCase()}`,
+    defaultPath: `folio-history-${profileSlug}-${new Date().toISOString().slice(0, 10)}.${format}`,
     filters: [{ name: format.toUpperCase(), extensions: [format] }],
   });
   if (!path) return;
@@ -260,5 +272,14 @@ void listen<string>("browser:popup-requested", ({ payload }) => {
 
 void invoke<string>("current_url").then((url) => {
   addressInput.value = url;
+});
+void invoke<ProfileSummary>("get_current_profile").then((profile) => {
+  profileBadge.textContent = profile.name;
+  profileBadge.title = `Current profile: ${profile.name}`;
+  profileSlug =
+    profile.name
+      .toLocaleLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "profile";
 });
 syncContentOffset();

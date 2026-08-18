@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "picker-capability",
+  "description": "Permissions for the profile picker only. It cannot navigate the web or read any profile's history.",
+  "webviews": ["picker"],
+  "permissions": [
+    "core:default",
+    "allow-list-profiles",
+    "allow-create-profile",
+    "allow-rename-profile",
+    "allow-delete-profile",
+    "allow-launch-profile"
+  ]
+}

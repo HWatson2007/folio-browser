@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>Folio — Choose a profile</title>
+  </head>
+  <body>
+    <main id="picker" class="picker-page">
+      <header class="picker-header">
+        <div class="brand" aria-label="Folio Browser">
+          <span class="brand-mark">F</span>
+          <span class="brand-name">Folio</span>
+        </div>
+        <div class="picker-heading">
+          <p class="eyebrow">A separate world for every kind of work</p>
+          <h1>Choose a profile</h1>
+          <p class="history-summary">Each profile keeps its own cookies, cache, and browsing ledger. Profiles can stay open at the same time.</p>
+        </div>
+      </header>
+
+      <section class="picker-body" aria-label="Available profiles">
+        <ul id="profile-list" class="profile-list"></ul>
+        <div id="empty-state" class="empty-state" hidden>
+          <p class="empty-title">No profiles yet</p>
+          <p class="empty-detail">Create one below and it will appear here.</p>
+        </div>
+      </section>
+
+      <form id="create-form" class="create-form" autocomplete="off">
+        <label class="sr-only" for="create-input">New profile name</label>
+        <input
+          id="create-input"
+          type="text"
+          maxlength="60"
+          placeholder="Name a new profile, e.g. Work"
+        />
+        <button id="create-button" class="create-button" type="submit">Create profile</button>
+      </form>
+
+      <div id="dialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title" hidden>
+        <div class="dialog-panel">
+          <h2 id="dialog-title"></h2>
+          <p id="dialog-message" class="dialog-message"></p>
+          <div id="dialog-rename" class="dialog-rename" hidden>
+            <input id="rename-input" type="text" maxlength="60" />
+          </div>
+          <div class="dialog-actions">
+            <button id="dialog-cancel" class="dialog-button" type="button">Cancel</button>
+            <button id="dialog-confirm" class="dialog-button dialog-confirm" type="button">Confirm</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </main>
+    <script type="module" src="/src/picker.ts"></script>
+  </body>
+</html>

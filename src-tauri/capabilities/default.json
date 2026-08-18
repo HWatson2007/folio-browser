@@ -1,10 +1,21 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "chrome-capability",
-  "description": "Permissions for the trusted local browser chrome only.",
+  "description": "Permissions for the trusted local browser chrome only. The remote content webview has no permissions.",
   "webviews": ["chrome"],
   "permissions": [
     "core:default",
-    "dialog:allow-save"
+    "dialog:allow-save",
+    "allow-navigate",
+    "allow-navigate-home",
+    "allow-go-back",
+    "allow-go-forward",
+    "allow-reload",
+    "allow-current-url",
+    "allow-set-content-visible",
+    "allow-set-content-offset",
+    "allow-get-history",
+    "allow-export-history",
+    "allow-get-current-profile"
   ]
 }
