@@ -49,12 +49,12 @@ pnpm build:app
 
 ## History Data
 
-The append-only journal is stored at:
+Browsing history is stored in a local SQLite database at:
 
 ```text
-%APPDATA%\com.folio.browser\history.journal.jsonl
+%APPDATA%\com.folio.browser\history.sqlite3
 ```
 
-Each navigation attempt is flushed to disk immediately. Later status and title changes are appended as journal events, so an interrupted write cannot silently replace prior history. Exported files are complete snapshots reconstructed from that journal.
+Each navigation attempt and its later status or title changes are written as SQLite transactions. Exported files are complete snapshots queried from that database.
 
 Remote websites run in a separate child webview without Tauri permissions. Only the trusted local chrome webview can invoke browser, history, or export commands.

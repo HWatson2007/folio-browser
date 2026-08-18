@@ -1,13 +1,14 @@
+use rusqlite::{Connection, Row, params};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, File, OpenOptions},
-    io::{BufRead, BufReader, BufWriter, Write},
+    fs::{self, File},
+    io::{BufWriter, Write},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
     Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewUrl,
@@ -41,24 +42,6 @@ enum NavigationStatus {
     Completed,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "event", rename_all = "snake_case")]
-enum JournalEvent {
-    Attempt {
-        entry: HistoryEntry,
-    },
-    Status {
-        id: u64,
-        status: NavigationStatus,
-        updated_at: u64,
-    },
-    Title {
-        id: u64,
-        title: String,
-        updated_at: u64,
-    },
-}
-
 #[derive(Clone, Debug)]
 struct PendingNavigation {
     target_url: String,
@@ -69,10 +52,8 @@ struct PendingNavigation {
 }
 
 struct HistoryStore {
-    entries: Mutex<Vec<HistoryEntry>>,
-    journal: Mutex<BufWriter<File>>,
+    connection: Mutex<Connection>,
     pending: Mutex<Option<PendingNavigation>>,
-    next_id: AtomicU64,
 }
 
 struct LayoutState {
@@ -97,80 +78,66 @@ struct ExportEntry {
     updated_at_iso: String,
 }
 
+impl NavigationStatus {
+    fn as_database_value(self) -> &'static str {
+        match self {
+            Self::Attempted => "attempted",
+            Self::Started => "started",
+            Self::Completed => "completed",
+        }
+    }
+
+    fn from_database_value(value: &str) -> Result<Self, String> {
+        match value {
+            "attempted" => Ok(Self::Attempted),
+            "started" => Ok(Self::Started),
+            "completed" => Ok(Self::Completed),
+            _ => Err(format!(
+                "History database contains an invalid navigation status: {value}"
+            )),
+        }
+    }
+}
+
 impl HistoryStore {
     fn open(path: &Path) -> Result<Self, String> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
 
-        let mut entries = Vec::new();
-        if path.exists() {
-            let file = File::open(path).map_err(|error| error.to_string())?;
-            for line in BufReader::new(file).lines().map_while(Result::ok) {
-                if let Ok(event) = serde_json::from_str::<JournalEvent>(&line) {
-                    Self::apply_event(&mut entries, event);
-                }
-            }
-        }
-
-        let next_id = entries.iter().map(|entry| entry.id).max().unwrap_or(0) + 1;
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
+        let connection = Connection::open(path).map_err(|error| error.to_string())?;
+        connection
+            .busy_timeout(Duration::from_secs(5))
+            .map_err(|error| error.to_string())?;
+        connection
+            .execute_batch(
+                "
+                PRAGMA journal_mode = WAL;
+                PRAGMA synchronous = FULL;
+                CREATE TABLE IF NOT EXISTS history_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    attempted_at INTEGER NOT NULL CHECK (attempted_at >= 0),
+                    updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
+                    url TEXT NOT NULL,
+                    title TEXT,
+                    status TEXT NOT NULL CHECK (status IN ('attempted', 'started', 'completed')),
+                    source TEXT NOT NULL,
+                    submitted_input TEXT,
+                    search_query TEXT,
+                    search_url TEXT
+                );
+                CREATE INDEX IF NOT EXISTS history_entries_newest
+                    ON history_entries (attempted_at DESC, id DESC);
+                CREATE INDEX IF NOT EXISTS history_entries_url_latest
+                    ON history_entries (url, id DESC);
+                ",
+            )
             .map_err(|error| error.to_string())?;
 
         Ok(Self {
-            entries: Mutex::new(entries),
-            journal: Mutex::new(BufWriter::new(file)),
+            connection: Mutex::new(connection),
             pending: Mutex::new(None),
-            next_id: AtomicU64::new(next_id),
         })
-    }
-
-    fn apply_event(entries: &mut Vec<HistoryEntry>, event: JournalEvent) {
-        match event {
-            JournalEvent::Attempt { mut entry } => {
-                if entry.search_query.is_none()
-                    && let Some(query) = duckduckgo_search_query(&entry.url)
-                {
-                    entry.source = "duckduckgo".to_owned();
-                    entry.submitted_input = Some(query.clone());
-                    entry.search_query = Some(query);
-                    entry.search_url = Some(entry.url.clone());
-                }
-                entries.push(entry);
-            }
-            JournalEvent::Status {
-                id,
-                status,
-                updated_at,
-            } => {
-                if let Some(entry) = entries.iter_mut().find(|entry| entry.id == id) {
-                    entry.status = status;
-                    entry.updated_at = updated_at;
-                }
-            }
-            JournalEvent::Title {
-                id,
-                title,
-                updated_at,
-            } => {
-                if let Some(entry) = entries.iter_mut().find(|entry| entry.id == id) {
-                    entry.title = Some(title);
-                    entry.updated_at = updated_at;
-                }
-            }
-        }
-    }
-
-    fn append_event(&self, event: &JournalEvent) -> Result<(), String> {
-        let mut journal = self.journal.lock().map_err(|error| error.to_string())?;
-        serde_json::to_writer(&mut *journal, event).map_err(|error| error.to_string())?;
-        journal
-            .write_all(b"\n")
-            .map_err(|error| error.to_string())?;
-        journal.flush().map_err(|error| error.to_string())
     }
 
     fn set_pending(&self, pending: PendingNavigation) -> Result<(), String> {
@@ -189,8 +156,8 @@ impl HistoryStore {
         };
         let detected_search = duckduckgo_search_query(url);
         let now = unix_millis();
-        let entry = HistoryEntry {
-            id: self.next_id.fetch_add(1, Ordering::Relaxed),
+        let mut entry = HistoryEntry {
+            id: 0,
             attempted_at: now,
             updated_at: now,
             url: url.to_owned(),
@@ -219,36 +186,49 @@ impl HistoryStore {
                 .and_then(|item| item.search_url.clone())
                 .or_else(|| detected_search.map(|_| url.to_owned())),
         };
-
-        self.append_event(&JournalEvent::Attempt {
-            entry: entry.clone(),
-        })?;
-        self.entries
-            .lock()
-            .map_err(|error| error.to_string())?
-            .push(entry.clone());
+        let connection = self.connection.lock().map_err(|error| error.to_string())?;
+        connection
+            .execute(
+                "INSERT INTO history_entries (
+                    attempted_at, updated_at, url, title, status, source, submitted_input,
+                    search_query, search_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    sqlite_integer(entry.attempted_at)?,
+                    sqlite_integer(entry.updated_at)?,
+                    entry.url,
+                    entry.title,
+                    entry.status.as_database_value(),
+                    entry.source,
+                    entry.submitted_input,
+                    entry.search_query,
+                    entry.search_url,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        entry.id = u64::try_from(connection.last_insert_rowid())
+            .map_err(|_| "History database generated an invalid ID.".to_owned())?;
         Ok(entry)
     }
 
     fn update_status(&self, url: &str, status: NavigationStatus) -> Result<(), String> {
-        let now = unix_millis();
-        let id = {
-            let mut entries = self.entries.lock().map_err(|error| error.to_string())?;
-            let Some(entry) = entries.iter_mut().rev().find(|entry| entry.url == url) else {
-                return Ok(());
-            };
-            if entry.status == status {
-                return Ok(());
-            }
-            entry.status = status;
-            entry.updated_at = now;
-            entry.id
-        };
-        self.append_event(&JournalEvent::Status {
-            id,
-            status,
-            updated_at: now,
-        })
+        let connection = self.connection.lock().map_err(|error| error.to_string())?;
+        connection
+            .execute(
+                "UPDATE history_entries
+                 SET status = ?, updated_at = ?
+                 WHERE id = (
+                    SELECT id FROM history_entries WHERE url = ? ORDER BY id DESC LIMIT 1
+                 ) AND status <> ?",
+                params![
+                    status.as_database_value(),
+                    sqlite_integer(unix_millis())?,
+                    url,
+                    status.as_database_value(),
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(())
     }
 
     fn update_title(&self, url: &str, title: &str) -> Result<(), String> {
@@ -256,35 +236,74 @@ impl HistoryStore {
         if title.is_empty() {
             return Ok(());
         }
-        let now = unix_millis();
-        let id = {
-            let mut entries = self.entries.lock().map_err(|error| error.to_string())?;
-            let Some(entry) = entries.iter_mut().rev().find(|entry| entry.url == url) else {
-                return Ok(());
-            };
-            if entry.title.as_deref() == Some(title) {
-                return Ok(());
-            }
-            entry.title = Some(title.to_owned());
-            entry.updated_at = now;
-            entry.id
-        };
-        self.append_event(&JournalEvent::Title {
-            id,
-            title: title.to_owned(),
-            updated_at: now,
-        })
+        let connection = self.connection.lock().map_err(|error| error.to_string())?;
+        connection
+            .execute(
+                "UPDATE history_entries
+                 SET title = ?, updated_at = ?
+                 WHERE id = (
+                    SELECT id FROM history_entries WHERE url = ? ORDER BY id DESC LIMIT 1
+                 ) AND (title IS NULL OR title <> ?)",
+                params![title, sqlite_integer(unix_millis())?, url, title],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(())
     }
 
     fn entries_newest_first(&self) -> Result<Vec<HistoryEntry>, String> {
-        let mut entries = self
-            .entries
-            .lock()
-            .map_err(|error| error.to_string())?
-            .clone();
-        entries.reverse();
+        let connection = self.connection.lock().map_err(|error| error.to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT id, attempted_at, updated_at, url, title, status, source,
+                        submitted_input, search_query, search_url
+                 FROM history_entries
+                 ORDER BY attempted_at DESC, id DESC",
+            )
+            .map_err(|error| error.to_string())?;
+        let mut rows = statement.query([]).map_err(|error| error.to_string())?;
+        let mut entries = Vec::new();
+        while let Some(row) = rows.next().map_err(|error| error.to_string())? {
+            entries.push(Self::entry_from_row(row)?);
+        }
         Ok(entries)
     }
+
+    fn entry_from_row(row: &Row<'_>) -> Result<HistoryEntry, String> {
+        let id = sqlite_unsigned(
+            row.get::<_, i64>(0).map_err(|error| error.to_string())?,
+            "ID",
+        )?;
+        let attempted_at = sqlite_unsigned(
+            row.get::<_, i64>(1).map_err(|error| error.to_string())?,
+            "attempt timestamp",
+        )?;
+        let updated_at = sqlite_unsigned(
+            row.get::<_, i64>(2).map_err(|error| error.to_string())?,
+            "update timestamp",
+        )?;
+        let status = row.get::<_, String>(5).map_err(|error| error.to_string())?;
+
+        Ok(HistoryEntry {
+            id,
+            attempted_at,
+            updated_at,
+            url: row.get(3).map_err(|error| error.to_string())?,
+            title: row.get(4).map_err(|error| error.to_string())?,
+            status: NavigationStatus::from_database_value(&status)?,
+            source: row.get(6).map_err(|error| error.to_string())?,
+            submitted_input: row.get(7).map_err(|error| error.to_string())?,
+            search_query: row.get(8).map_err(|error| error.to_string())?,
+            search_url: row.get(9).map_err(|error| error.to_string())?,
+        })
+    }
+}
+
+fn sqlite_integer(value: u64) -> Result<i64, String> {
+    i64::try_from(value).map_err(|_| "Timestamp exceeds SQLite's integer range.".to_owned())
+}
+
+fn sqlite_unsigned(value: i64, column: &str) -> Result<u64, String> {
+    u64::try_from(value).map_err(|_| format!("History database contains a negative {column}."))
 }
 
 fn unix_millis() -> u64 {
@@ -582,7 +601,7 @@ pub fn run() {
             export_history
         ])
         .setup(|app| {
-            let history_path = app.path().app_data_dir()?.join("history.journal.jsonl");
+            let history_path = app.path().app_data_dir()?.join("history.sqlite3");
             let history = Arc::new(HistoryStore::open(&history_path)?);
             app.manage(history.clone());
             let layout = Arc::new(LayoutState {
@@ -724,6 +743,52 @@ mod tests {
             Some("exact phrase")
         );
         assert!(duckduckgo_search_query("https://example.com/?q=private").is_none());
+    }
+
+    #[test]
+    fn persists_history_entries_and_updates_only_the_latest_matching_url() {
+        let directory = std::env::temp_dir().join(format!(
+            "folio-browser-history-test-{}-{}",
+            std::process::id(),
+            unix_millis()
+        ));
+        let path = directory.join("history.sqlite3");
+
+        let first = {
+            let history = HistoryStore::open(&path).unwrap();
+            let first = history.record_attempt("https://example.com/").unwrap();
+            history
+                .update_status("https://example.com/", NavigationStatus::Completed)
+                .unwrap();
+            history
+                .update_title("https://example.com/", "First title")
+                .unwrap();
+            let second = history.record_attempt("https://example.com/").unwrap();
+            history
+                .update_status("https://example.com/", NavigationStatus::Started)
+                .unwrap();
+            history
+                .update_title("https://example.com/", "Second title")
+                .unwrap();
+
+            let entries = history.entries_newest_first().unwrap();
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].id, second.id);
+            assert_eq!(entries[0].status, NavigationStatus::Started);
+            assert_eq!(entries[0].title.as_deref(), Some("Second title"));
+            assert_eq!(entries[1].id, first.id);
+            assert_eq!(entries[1].status, NavigationStatus::Completed);
+            assert_eq!(entries[1].title.as_deref(), Some("First title"));
+            first
+        };
+
+        assert!(path.exists());
+        let history = HistoryStore::open(&path).unwrap();
+        let entries = history.entries_newest_first().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[1].id, first.id);
+        drop(history);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
