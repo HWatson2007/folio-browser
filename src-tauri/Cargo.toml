@@ -1,6 +1,6 @@
 [package]
 name = "folio-browser"
-version = "0.2.1"
+version = "0.2.2"
 description = "A lightweight single-tab WebView2 browser with complete local history"
 authors = ["Folio contributors"]
 edition = "2024"

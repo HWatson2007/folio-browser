@@ -124,11 +124,19 @@ function renderProfiles(): void {
     rename.type = "button";
     rename.className = "quiet-button";
     rename.textContent = "Rename";
+    rename.disabled = profile.running;
+    if (profile.running) {
+      rename.title = "Close this profile before renaming it";
+    }
     rename.addEventListener("click", () => openRenameDialog(profile));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "quiet-button danger";
     remove.textContent = "Delete";
+    remove.disabled = profile.running;
+    if (profile.running) {
+      remove.title = "Close this profile before deleting it";
+    }
     remove.addEventListener("click", () => openDeleteDialog(profile));
     actions.append(open, rename, remove);
 
