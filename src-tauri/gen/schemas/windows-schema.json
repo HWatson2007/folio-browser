@@ -177,6 +177,12 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the cancel_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cancel-download",
+          "markdownDescription": "Enables the cancel_download command without any pre-configured scope."
+        },
+        {
           "description": "Enables the create_profile command without any pre-configured scope.",
           "type": "string",
           "const": "allow-create-profile",
@@ -205,6 +211,12 @@
           "type": "string",
           "const": "allow-get-current-profile",
           "markdownDescription": "Enables the get_current_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_downloads command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-downloads",
+          "markdownDescription": "Enables the get_downloads command without any pre-configured scope."
         },
         {
           "description": "Enables the get_history command without any pre-configured scope.",
@@ -255,6 +267,12 @@
           "markdownDescription": "Enables the navigate_home command without any pre-configured scope."
         },
         {
+          "description": "Enables the open_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-download",
+          "markdownDescription": "Enables the open_download command without any pre-configured scope."
+        },
+        {
           "description": "Enables the reload command without any pre-configured scope.",
           "type": "string",
           "const": "allow-reload",
@@ -277,6 +295,18 @@
           "type": "string",
           "const": "allow-set-content-visible",
           "markdownDescription": "Enables the set_content_visible command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the show_download_in_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-show-download-in-folder",
+          "markdownDescription": "Enables the show_download_in_folder command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cancel_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cancel-download",
+          "markdownDescription": "Denies the cancel_download command without any pre-configured scope."
         },
         {
           "description": "Denies the create_profile command without any pre-configured scope.",
@@ -307,6 +337,12 @@
           "type": "string",
           "const": "deny-get-current-profile",
           "markdownDescription": "Denies the get_current_profile command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_downloads command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-downloads",
+          "markdownDescription": "Denies the get_downloads command without any pre-configured scope."
         },
         {
           "description": "Denies the get_history command without any pre-configured scope.",
@@ -357,6 +393,12 @@
           "markdownDescription": "Denies the navigate_home command without any pre-configured scope."
         },
         {
+          "description": "Denies the open_download command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-download",
+          "markdownDescription": "Denies the open_download command without any pre-configured scope."
+        },
+        {
           "description": "Denies the reload command without any pre-configured scope.",
           "type": "string",
           "const": "deny-reload",
@@ -379,6 +421,12 @@
           "type": "string",
           "const": "deny-set-content-visible",
           "markdownDescription": "Denies the set_content_visible command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the show_download_in_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-show-download-in-folder",
+          "markdownDescription": "Denies the show_download_in_folder command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

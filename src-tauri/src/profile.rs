@@ -137,6 +137,10 @@ impl ProfileRegistry {
         self.profile_dir(id).join(LEGACY_HISTORY_FILE)
     }
 
+    pub fn downloads_path(&self, id: &ProfileId) -> PathBuf {
+        self.profile_dir(id).join("downloads.sqlite3")
+    }
+
     pub fn lock_path(&self, id: &ProfileId) -> PathBuf {
         self.profile_dir(id).join(LOCK_FILE)
     }
@@ -514,6 +518,7 @@ mod tests {
         let b = ProfileId::new();
         assert_ne!(a, b);
         assert_ne!(registry.history_path(&a), registry.history_path(&b));
+        assert_ne!(registry.downloads_path(&a), registry.downloads_path(&b));
         assert_ne!(registry.webview_dir(&a), registry.webview_dir(&b));
         let history = registry.history_path(&a);
         assert_eq!(history, registry.profile_dir(&a).join("history.sqlite3"));

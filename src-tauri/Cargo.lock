@@ -822,7 +822,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "folio-browser"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "fs2",
  "rusqlite",
@@ -833,6 +833,8 @@ dependencies = [
  "tauri-plugin-dialog",
  "time",
  "uuid",
+ "webview2-com",
+ "windows",
 ]
 
 [[package]]

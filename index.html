@@ -37,9 +37,14 @@
           <button class="go-button" type="submit">Go</button>
         </form>
 
-        <button id="history-button" class="history-button" type="button" aria-expanded="false" aria-controls="history-panel">
-          History
-        </button>
+        <div class="section-buttons" aria-label="Browser records">
+          <button id="downloads-button" class="section-button" type="button" aria-expanded="false" aria-controls="downloads-panel">
+            Downloads <span id="downloads-count" class="section-count" hidden></span>
+          </button>
+          <button id="history-button" class="section-button" type="button" aria-expanded="false" aria-controls="history-panel">
+            History
+          </button>
+        </div>
       </header>
 
       <section id="history-panel" class="history-panel" aria-hidden="true">
@@ -63,6 +68,30 @@
 
         <div id="history-list" class="history-list" aria-live="polite"></div>
       </section>
+
+      <section id="downloads-panel" class="downloads-panel" aria-hidden="true">
+        <div class="ledger-heading downloads-heading">
+          <div>
+            <p class="eyebrow">Files saved by this profile</p>
+            <h1>Downloads</h1>
+            <p id="downloads-summary" class="history-summary">The download record is kept on this device.</p>
+          </div>
+          <button id="close-downloads-button" class="close-button" type="button">Return to page</button>
+        </div>
+        <div id="downloads-list" class="downloads-list" aria-live="polite"></div>
+      </section>
+
+      <div id="open-warning" class="dialog" role="dialog" aria-modal="true" aria-labelledby="open-warning-title" hidden>
+        <div class="dialog-panel">
+          <p class="eyebrow">Open a downloaded program</p>
+          <h2 id="open-warning-title">Check this file before opening it.</h2>
+          <p id="open-warning-message" class="dialog-message"></p>
+          <div class="dialog-actions">
+            <button id="cancel-open-button" class="dialog-button" type="button">Cancel</button>
+            <button id="confirm-open-button" class="dialog-button dialog-confirm" type="button">Open file</button>
+          </div>
+        </div>
+      </div>
 
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
     </main>

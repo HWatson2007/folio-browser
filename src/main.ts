@@ -24,6 +24,25 @@ interface NavigationEvent {
   title: string | null;
 }
 
+type DownloadStatus = "requested" | "downloading" | "completed" | "failed" | "canceled" | "interrupted";
+
+interface DownloadEntry {
+  id: number;
+  requestedAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+  url: string;
+  sourcePageUrl: string | null;
+  suggestedFilename: string;
+  path: string | null;
+  mimeType: string | null;
+  contentDisposition: string | null;
+  status: DownloadStatus;
+  bytesReceived: number;
+  totalBytes: number | null;
+  interruptReason: string | null;
+}
+
 interface ProfileSummary {
   id: string;
   name: string;
@@ -43,6 +62,13 @@ const addressForm = byId<HTMLFormElement>("address-form");
 const addressInput = byId<HTMLInputElement>("address-input");
 const historyButton = byId<HTMLButtonElement>("history-button");
 const historyPanel = byId<HTMLElement>("history-panel");
+const downloadsButton = byId<HTMLButtonElement>("downloads-button");
+const downloadsCount = byId<HTMLElement>("downloads-count");
+const downloadsPanel = byId<HTMLElement>("downloads-panel");
+const downloadsList = byId<HTMLElement>("downloads-list");
+const downloadsSummary = byId<HTMLElement>("downloads-summary");
+const openWarning = byId<HTMLElement>("open-warning");
+const openWarningMessage = byId<HTMLElement>("open-warning-message");
 const historySearch = byId<HTMLInputElement>("history-search");
 const historyList = byId<HTMLElement>("history-list");
 const historySummary = byId<HTMLElement>("history-summary");
@@ -53,7 +79,10 @@ const toast = byId<HTMLElement>("toast");
 let profileSlug = "profile";
 
 let historyEntries: HistoryEntry[] = [];
+let downloadEntries: DownloadEntry[] = [];
 let historyOpen = false;
+let downloadsOpen = false;
+let pendingExecutableId: number | null = null;
 let toastTimer: number | undefined;
 let resizeTimer: number | undefined;
 let searchTimer: number | undefined;
@@ -84,6 +113,143 @@ function formatDay(timestamp: number): string {
 
 function formatTime(timestamp: number): string {
   return timeFormatter.format(new Date(timestamp));
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes.toLocaleString()} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = units[0];
+  for (let index = 1; index < units.length && value >= 1024; index += 1) {
+    value /= 1024;
+    unit = units[index];
+  }
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: value < 10 ? 1 : 0 })} ${unit}`;
+}
+
+function downloadDetail(entry: DownloadEntry): string {
+  if (entry.status === "downloading" || entry.status === "requested") {
+    if (entry.totalBytes != null) {
+      return `${formatBytes(entry.bytesReceived)} of ${formatBytes(entry.totalBytes)}`;
+    }
+    return entry.bytesReceived > 0 ? formatBytes(entry.bytesReceived) : "Preparing download";
+  }
+  if (entry.status === "completed") return `${formatBytes(entry.bytesReceived)} · Complete`;
+  if (entry.status === "canceled") return "Canceled";
+  if (entry.status === "interrupted") return "Interrupted when the browser closed";
+  return "Download failed";
+}
+
+function isExecutable(path: string | null): boolean {
+  return Boolean(path && /\.(exe|msi|msix|bat|cmd|com|scr|ps1|vbs|js|jar)$/i.test(path));
+}
+
+function makeDownloadAction(label: string, action: () => Promise<void>, className = ""): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `download-action ${className}`.trim();
+  button.textContent = label;
+  button.addEventListener("click", () => void action().catch((error) => showToast(String(error))));
+  return button;
+}
+
+function requestOpen(entry: DownloadEntry): Promise<void> {
+  if (!isExecutable(entry.path)) return invoke("open_download", { id: entry.id });
+  pendingExecutableId = entry.id;
+  openWarningMessage.textContent = `${entry.suggestedFilename} can make changes to this computer. Open it only if you trust its source.`;
+  openWarning.hidden = false;
+  byId<HTMLButtonElement>("cancel-open-button").focus();
+  return Promise.resolve();
+}
+
+function renderDownloads(): void {
+  downloadsList.replaceChildren();
+  const activeCount = downloadEntries.filter((entry) => entry.status === "requested" || entry.status === "downloading").length;
+  downloadsCount.hidden = activeCount === 0;
+  downloadsCount.textContent = activeCount.toLocaleString();
+  downloadsSummary.textContent = downloadEntries.length === 0
+    ? "No files have been requested by this profile."
+    : `${downloadEntries.length.toLocaleString()} recorded ${downloadEntries.length === 1 ? "download" : "downloads"}, stored separately for this profile.`;
+
+  if (downloadEntries.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-history";
+    empty.textContent = "Downloaded files will be listed here.";
+    downloadsList.append(empty);
+    return;
+  }
+
+  for (const entry of downloadEntries) {
+    const row = document.createElement("article");
+    row.className = `download-entry status-${entry.status}`;
+
+    const marker = document.createElement("div");
+    marker.className = "download-marker";
+    marker.textContent = entry.suggestedFilename.slice(0, 1).toLocaleUpperCase() || "↓";
+    marker.setAttribute("aria-hidden", "true");
+
+    const body = document.createElement("div");
+    body.className = "download-body";
+    const heading = document.createElement("div");
+    heading.className = "download-title-row";
+    const title = document.createElement("h2");
+    title.textContent = entry.suggestedFilename;
+    title.title = entry.path ?? entry.suggestedFilename;
+    const status = document.createElement("span");
+    status.className = "download-status";
+    status.textContent = entry.status;
+    heading.append(title, status);
+
+    const detail = document.createElement("p");
+    detail.className = "download-detail";
+    detail.textContent = `${downloadDetail(entry)} · ${formatDay(entry.requestedAt)}, ${formatTime(entry.requestedAt)}`;
+
+    if (entry.status === "downloading" || entry.status === "requested") {
+      const track = document.createElement("div");
+      track.className = "download-progress";
+      const bar = document.createElement("span");
+      if (entry.totalBytes && entry.totalBytes > 0) {
+        bar.style.width = `${Math.min(100, (entry.bytesReceived / entry.totalBytes) * 100)}%`;
+      } else {
+        track.classList.add("is-indeterminate");
+      }
+      track.append(bar);
+      body.append(heading, detail, track);
+    } else {
+      body.append(heading, detail);
+    }
+
+    const source = document.createElement("p");
+    source.className = "download-source";
+    source.textContent = entry.url;
+    source.title = entry.sourcePageUrl ? `Requested from ${entry.sourcePageUrl}` : entry.url;
+    body.append(source);
+    if (entry.path) {
+      const location = document.createElement("p");
+      location.className = "download-location";
+      location.textContent = entry.path;
+      location.title = entry.path;
+      body.append(location);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "download-actions";
+    if (entry.status === "requested" || entry.status === "downloading") {
+      actions.append(makeDownloadAction("Cancel", () => invoke("cancel_download", { id: entry.id }), "danger"));
+    } else if (entry.status === "completed") {
+      actions.append(
+        makeDownloadAction("Open", () => requestOpen(entry), "primary"),
+        makeDownloadAction("Show in folder", () => invoke("show_download_in_folder", { id: entry.id })),
+      );
+    }
+    row.append(marker, body, actions);
+    downloadsList.append(row);
+  }
+}
+
+async function refreshDownloads(): Promise<void> {
+  downloadEntries = await invoke<DownloadEntry[]>("get_downloads");
+  renderDownloads();
 }
 
 function displayTitle(entry: HistoryEntry): string {
@@ -172,6 +338,7 @@ async function refreshHistory(): Promise<void> {
 }
 
 async function openHistory(): Promise<void> {
+  if (downloadsOpen) await closeDownloads();
   historyOpen = true;
   historyButton.setAttribute("aria-expanded", "true");
   historyPanel.setAttribute("aria-hidden", "false");
@@ -187,6 +354,25 @@ async function closeHistory(): Promise<void> {
   historyButton.setAttribute("aria-expanded", "false");
   historyPanel.setAttribute("aria-hidden", "true");
   historyPanel.classList.remove("is-open");
+  await invoke("set_content_visible", { visible: true });
+}
+
+async function openDownloads(): Promise<void> {
+  if (historyOpen) await closeHistory();
+  downloadsOpen = true;
+  downloadsButton.setAttribute("aria-expanded", "true");
+  downloadsPanel.setAttribute("aria-hidden", "false");
+  downloadsPanel.classList.add("is-open");
+  await invoke("set_content_visible", { visible: false });
+  await refreshDownloads();
+}
+
+async function closeDownloads(): Promise<void> {
+  if (!downloadsOpen) return;
+  downloadsOpen = false;
+  downloadsButton.setAttribute("aria-expanded", "false");
+  downloadsPanel.setAttribute("aria-hidden", "true");
+  downloadsPanel.classList.remove("is-open");
   await invoke("set_content_visible", { visible: true });
 }
 
@@ -228,7 +414,24 @@ byId<HTMLButtonElement>("forward-button").addEventListener("click", () => invoke
 byId<HTMLButtonElement>("reload-button").addEventListener("click", () => invoke("reload"));
 byId<HTMLButtonElement>("home-button").addEventListener("click", () => invoke("navigate_home"));
 historyButton.addEventListener("click", () => (historyOpen ? closeHistory() : openHistory()));
+downloadsButton.addEventListener("click", () => (downloadsOpen ? closeDownloads() : openDownloads()));
 byId<HTMLButtonElement>("close-history-button").addEventListener("click", closeHistory);
+byId<HTMLButtonElement>("close-downloads-button").addEventListener("click", closeDownloads);
+byId<HTMLButtonElement>("cancel-open-button").addEventListener("click", () => {
+  pendingExecutableId = null;
+  openWarning.hidden = true;
+});
+byId<HTMLButtonElement>("confirm-open-button").addEventListener("click", async () => {
+  const id = pendingExecutableId;
+  pendingExecutableId = null;
+  openWarning.hidden = true;
+  if (id == null) return;
+  try {
+    await invoke("open_download", { id });
+  } catch (error) {
+    showToast(String(error));
+  }
+});
 historySearch.addEventListener("input", () => {
   window.clearTimeout(searchTimer);
   searchTimer = window.setTimeout(renderHistory, 800);
@@ -244,6 +447,9 @@ window.addEventListener("keydown", (event) => {
   } else if (event.ctrlKey && event.key.toLocaleLowerCase() === "h") {
     event.preventDefault();
     void (historyOpen ? closeHistory() : openHistory());
+  } else if (event.ctrlKey && event.key.toLocaleLowerCase() === "j") {
+    event.preventDefault();
+    void (downloadsOpen ? closeDownloads() : openDownloads());
   } else if (event.altKey && event.key === "ArrowLeft") {
     event.preventDefault();
     void invoke("go_back");
@@ -253,8 +459,13 @@ window.addEventListener("keydown", (event) => {
   } else if (event.ctrlKey && event.key.toLocaleLowerCase() === "r") {
     event.preventDefault();
     void invoke("reload");
+  } else if (event.key === "Escape" && !openWarning.hidden) {
+    pendingExecutableId = null;
+    openWarning.hidden = true;
   } else if (event.key === "Escape" && historyOpen) {
     void closeHistory();
+  } else if (event.key === "Escape" && downloadsOpen) {
+    void closeDownloads();
   }
 });
 
@@ -270,6 +481,18 @@ void listen<string>("browser:popup-requested", ({ payload }) => {
   void invoke("navigate", { input: payload, source: "popup" });
 });
 
+void listen<DownloadEntry>("browser:download", ({ payload }) => {
+  const index = downloadEntries.findIndex((entry) => entry.id === payload.id);
+  const previousStatus = index >= 0 ? (downloadEntries[index]?.status ?? null) : null;
+  if (index >= 0) downloadEntries[index] = payload;
+  else downloadEntries.unshift(payload);
+  renderDownloads();
+  if (previousStatus !== payload.status) {
+    if (payload.status === "completed") showToast(`${payload.suggestedFilename} downloaded.`);
+    else if (payload.status === "failed") showToast(`${payload.suggestedFilename} could not be downloaded.`);
+  }
+});
+
 void invoke<string>("current_url").then((url) => {
   addressInput.value = url;
 });
@@ -282,4 +505,5 @@ void invoke<ProfileSummary>("get_current_profile").then((profile) => {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "") || "profile";
 });
+void refreshDownloads().catch((error) => showToast(String(error)));
 syncContentOffset();

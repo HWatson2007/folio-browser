@@ -16,6 +16,10 @@
     "allow-set-content-offset",
     "allow-get-history",
     "allow-export-history",
-    "allow-get-current-profile"
+    "allow-get-current-profile",
+    "allow-get-downloads",
+    "allow-cancel-download",
+    "allow-open-download",
+    "allow-show-download-in-folder"
   ]
 }

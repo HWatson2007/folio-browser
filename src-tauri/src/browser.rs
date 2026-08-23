@@ -1,3 +1,7 @@
+use crate::download::{
+    DownloadEntry, DownloadManager, DownloadStore, attach_download_handler, cancel_active_download,
+    open_completed_download,
+};
 use crate::history::{
     HistoryEntry, HistoryStore, NavigationStatus, PendingNavigation, timestamp_iso,
 };
@@ -300,6 +304,33 @@ fn get_current_profile(profile: State<'_, crate::profile::ProfileRecord>) -> Pro
     ProfileSummary::from(&profile, true)
 }
 
+#[tauri::command]
+fn get_downloads(downloads: State<'_, Arc<DownloadManager>>) -> Result<Vec<DownloadEntry>, String> {
+    downloads.store.entries_newest_first()
+}
+
+#[tauri::command]
+fn cancel_download(
+    app: tauri::AppHandle,
+    downloads: State<'_, Arc<DownloadManager>>,
+    id: u64,
+) -> Result<(), String> {
+    cancel_active_download(&content_webview(&app)?, &downloads, id)
+}
+
+#[tauri::command]
+fn open_download(downloads: State<'_, Arc<DownloadManager>>, id: u64) -> Result<(), String> {
+    open_completed_download(&downloads.store, id, false)
+}
+
+#[tauri::command]
+fn show_download_in_folder(
+    downloads: State<'_, Arc<DownloadManager>>,
+    id: u64,
+) -> Result<(), String> {
+    open_completed_download(&downloads.store, id, true)
+}
+
 pub fn run(profile_id: ProfileId, launch_token: Option<ProfileId>) {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -314,7 +345,11 @@ pub fn run(profile_id: ProfileId, launch_token: Option<ProfileId>) {
             set_content_offset,
             get_history,
             export_history,
-            get_current_profile
+            get_current_profile,
+            get_downloads,
+            cancel_download,
+            open_download,
+            show_download_in_folder
         ])
         .setup(move |app| {
             let app_data = app.path().app_data_dir()?;
@@ -330,9 +365,12 @@ pub fn run(profile_id: ProfileId, launch_token: Option<ProfileId>) {
             app.manage(lock);
 
             let history_path = registry.history_path(&profile_id);
+            let downloads_path = registry.downloads_path(&profile_id);
             let webview_dir = registry.webview_dir(&profile_id);
             let history = Arc::new(HistoryStore::open(&history_path)?);
             app.manage(history.clone());
+            let downloads = Arc::new(DownloadManager::new(DownloadStore::open(&downloads_path)?));
+            app.manage(downloads.clone());
 
             let layout = Arc::new(LayoutState {
                 toolbar_height: Mutex::new(TOOLBAR_HEIGHT),
@@ -418,11 +456,12 @@ pub fn run(profile_id: ProfileId, launch_token: Option<ProfileId>) {
                     }
                 });
 
-            window.add_child(
+            let content = window.add_child(
                 content,
                 LogicalPosition::new(0.0, TOOLBAR_HEIGHT),
                 LogicalSize::new(size.width, (size.height - TOOLBAR_HEIGHT).max(1.0)),
             )?;
+            attach_download_handler(&content, app.handle().clone(), downloads)?;
 
             let chrome = WebviewBuilder::new("chrome", WebviewUrl::App("index.html".into()))
                 .data_directory(webview_dir)

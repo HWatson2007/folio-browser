@@ -14,6 +14,8 @@ Folio is a lightweight, single-tab Windows browser built with Rust, Tauri 2, Typ
 - Exact DuckDuckGo query recording, including searches submitted on the DuckDuckGo page
 - Searchable local history ledger
 - Native Save As export to JSON or CSV
+- Native per-download Save As prompts with live progress and cancellation
+- Persistent, profile-isolated download records with open and reveal actions
 - Unix millisecond and ISO 8601 UTC timestamps in exports
 
 ## How profiles work
@@ -39,6 +41,7 @@ starting a second window on the same user-data folder.
     profiles.json                 # shared profile registry
     profiles\<id>\
         history.sqlite3           # per-profile browsing ledger
+        downloads.sqlite3         # per-profile download ledger
         profile.lock              # exclusive lock while the profile is open
 
 %LOCALAPPDATA%\com.folio.browser\
@@ -95,7 +98,8 @@ src-tauri/src/
     lib.rs       # entry point; dispatches to picker or browser
     cli.rs       # --profile argument parsing
     profile.rs   # registry, per-profile paths, locks, migration
-    history.rs   # per-profile SQLite ledger
+    history.rs   # per-profile browsing SQLite ledger
+    download.rs  # WebView2 downloads and per-profile download ledger
     picker.rs    # launcher process and profile commands
     browser.rs   # browser process, chrome + content webviews
 src/

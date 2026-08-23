@@ -1,5 +1,6 @@
 mod browser;
 mod cli;
+mod download;
 mod history;
 mod picker;
 mod profile;

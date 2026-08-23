@@ -1,6 +1,6 @@
 [package]
 name = "folio-browser"
-version = "0.2.2"
+version = "0.2.3"
 description = "A lightweight single-tab WebView2 browser with complete local history"
 authors = ["Folio contributors"]
 edition = "2024"
@@ -21,6 +21,10 @@ tauri = { version = "=2.11.5", features = ["unstable"] }
 tauri-plugin-dialog = "=2.7.2"
 time = { version = "=0.3.55", features = ["formatting"] }
 uuid = { version = "=1.24.1", features = ["v4"] }
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "=0.38.2"
+windows = "=0.61.3"
 
 [profile.release]
 codegen-units = 1

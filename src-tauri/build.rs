@@ -11,6 +11,10 @@ const COMMANDS: &[&str] = &[
     "get_history",
     "export_history",
     "get_current_profile",
+    "get_downloads",
+    "cancel_download",
+    "open_download",
+    "show_download_in_folder",
     // profile picker
     "get_migration_error",
     "list_profiles",
