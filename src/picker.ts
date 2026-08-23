@@ -28,6 +28,7 @@ const emptyState = byId<HTMLElement>("empty-state");
 const createForm = byId<HTMLFormElement>("create-form");
 const createInput = byId<HTMLInputElement>("create-input");
 const createButton = byId<HTMLButtonElement>("create-button");
+const migrationError = byId<HTMLElement>("migration-error");
 const dialog = byId<HTMLElement>("dialog");
 const dialogTitle = byId<HTMLElement>("dialog-title");
 const dialogMessage = byId<HTMLElement>("dialog-message");
@@ -40,6 +41,7 @@ let dialogState: DialogState | null = null;
 let toastTimer: number | undefined;
 let creatingProfile = false;
 let launchingProfile = false;
+let migrationBlocked = false;
 
 const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
@@ -136,6 +138,7 @@ function renderProfiles(): void {
 }
 
 async function refreshProfiles(): Promise<void> {
+  if (migrationBlocked) return;
   try {
     profiles = await invoke<ProfileSummary[]>("list_profiles");
     renderProfiles();
@@ -212,7 +215,7 @@ async function confirmDialog(): Promise<void> {
 
 createForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (creatingProfile) return;
+  if (migrationBlocked || creatingProfile) return;
   const name = createInput.value.trim();
   if (!name) return;
 
@@ -245,4 +248,21 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-void refreshProfiles();
+async function initializePicker(): Promise<void> {
+  try {
+    const error = await invoke<string | null>("get_migration_error");
+    if (error) {
+      migrationBlocked = true;
+      migrationError.textContent = error;
+      migrationError.hidden = false;
+      createInput.disabled = true;
+      createButton.disabled = true;
+      return;
+    }
+    await refreshProfiles();
+  } catch (error) {
+    showToast(String(error));
+  }
+}
+
+void initializePicker();

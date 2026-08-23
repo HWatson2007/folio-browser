@@ -213,6 +213,12 @@
           "markdownDescription": "Enables the get_history command without any pre-configured scope."
         },
         {
+          "description": "Enables the get_migration_error command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-migration-error",
+          "markdownDescription": "Enables the get_migration_error command without any pre-configured scope."
+        },
+        {
           "description": "Enables the go_back command without any pre-configured scope.",
           "type": "string",
           "const": "allow-go-back",
@@ -307,6 +313,12 @@
           "type": "string",
           "const": "deny-get-history",
           "markdownDescription": "Denies the get_history command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_migration_error command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-migration-error",
+          "markdownDescription": "Denies the get_migration_error command without any pre-configured scope."
         },
         {
           "description": "Denies the go_back command without any pre-configured scope.",

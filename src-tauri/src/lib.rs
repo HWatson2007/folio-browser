@@ -8,6 +8,9 @@ mod profile;
 pub fn run() {
     match cli::parse() {
         cli::AppMode::Picker => picker::run(),
-        cli::AppMode::Browser { profile_id } => browser::run(profile_id),
+        cli::AppMode::Browser {
+            profile_id,
+            launch_token,
+        } => browser::run(profile_id, launch_token),
     }
 }

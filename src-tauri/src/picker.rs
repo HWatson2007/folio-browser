@@ -1,10 +1,38 @@
 use crate::profile::{ProfileId, ProfileLock, ProfileRegistry, ProfileSummary};
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tauri::webview::WebviewBuilder;
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, State, WebviewUrl};
 
+const LAUNCH_TIMEOUT: Duration = Duration::from_secs(12);
+const LAUNCH_POLL_INTERVAL: Duration = Duration::from_millis(40);
+
+struct PickerState {
+    registry: Arc<ProfileRegistry>,
+    migration_error: Option<String>,
+}
+
+impl PickerState {
+    fn registry(&self) -> Result<&ProfileRegistry, String> {
+        match &self.migration_error {
+            Some(error) => Err(format!(
+                "Your existing Folio data could not be migrated safely. No profile changes were made. {error}"
+            )),
+            None => Ok(&self.registry),
+        }
+    }
+}
+
 #[tauri::command]
-fn list_profiles(registry: State<'_, Arc<ProfileRegistry>>) -> Result<Vec<ProfileSummary>, String> {
+fn get_migration_error(state: State<'_, PickerState>) -> Option<String> {
+    state.migration_error.clone()
+}
+
+#[tauri::command]
+fn list_profiles(state: State<'_, PickerState>) -> Result<Vec<ProfileSummary>, String> {
+    let registry = state.registry()?;
     let mut profiles = registry.load()?;
     profiles.sort_by(|a, b| {
         b.last_used_at
@@ -23,10 +51,8 @@ fn list_profiles(registry: State<'_, Arc<ProfileRegistry>>) -> Result<Vec<Profil
 }
 
 #[tauri::command]
-fn create_profile(
-    registry: State<'_, Arc<ProfileRegistry>>,
-    name: String,
-) -> Result<ProfileSummary, String> {
+fn create_profile(state: State<'_, PickerState>, name: String) -> Result<ProfileSummary, String> {
+    let registry = state.registry()?;
     let name = name.trim().to_owned();
     if name.is_empty() {
         return Err("Enter a name for the new profile.".to_owned());
@@ -36,11 +62,8 @@ fn create_profile(
 }
 
 #[tauri::command]
-fn rename_profile(
-    registry: State<'_, Arc<ProfileRegistry>>,
-    id: String,
-    name: String,
-) -> Result<(), String> {
+fn rename_profile(state: State<'_, PickerState>, id: String, name: String) -> Result<(), String> {
+    let registry = state.registry()?;
     let id = ProfileId::parse(&id)?;
     let name = name.trim().to_owned();
     if name.is_empty() {
@@ -50,7 +73,8 @@ fn rename_profile(
 }
 
 #[tauri::command]
-fn delete_profile(registry: State<'_, Arc<ProfileRegistry>>, id: String) -> Result<(), String> {
+fn delete_profile(state: State<'_, PickerState>, id: String) -> Result<(), String> {
+    let registry = state.registry()?;
     let id = ProfileId::parse(&id)?;
     registry.delete(&id)
 }
@@ -76,27 +100,48 @@ fn apply_picker_layout(app: &AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn launch_profile(registry: State<'_, Arc<ProfileRegistry>>, id: String) -> Result<(), String> {
+fn launch_profile(state: State<'_, PickerState>, id: String) -> Result<(), String> {
+    let registry = state.registry()?;
     let id = ProfileId::parse(&id)?;
-    if ProfileLock::is_locked(&registry.lock_path(&id)) {
-        return Err("This profile is already open in another window.".to_owned());
-    }
-    if registry.find(&id)?.is_none() {
-        return Err("That profile no longer exists.".to_owned());
-    }
+    let _reservation = registry.reserve_launch(&id)?;
+    let token = ProfileId::new();
+    let ready_path = registry.launch_ready_path(&id, &token);
+    let _ = std::fs::remove_file(&ready_path);
+
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-    let child = std::process::Command::new(executable)
+    let mut child = std::process::Command::new(executable)
         .arg("--profile")
         .arg(id.as_str())
+        .arg("--launch-token")
+        .arg(token.as_str())
         .spawn()
         .map_err(|error| format!("Could not open the profile: {error}"))?;
-    drop(child);
-    registry.touch_last_used(&id)
+
+    let start = Instant::now();
+    loop {
+        if ready_path.exists() {
+            let _ = std::fs::remove_file(&ready_path);
+            let _ = registry.touch_last_used(&id);
+            return Ok(());
+        }
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            return Err(format!(
+                "The profile browser exited before it was ready ({status})."
+            ));
+        }
+        if start.elapsed() >= LAUNCH_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("The profile browser did not become ready in time.".to_owned());
+        }
+        std::thread::sleep(LAUNCH_POLL_INTERVAL);
+    }
 }
 
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            get_migration_error,
             list_profiles,
             create_profile,
             rename_profile,
@@ -107,10 +152,11 @@ pub fn run() {
             let registry =
                 ProfileRegistry::new(app.path().app_data_dir()?, app.path().app_local_data_dir()?);
             let launcher_dir = registry.launcher_dir();
-            if let Err(error) = registry.migrate_legacy() {
-                eprintln!("Folio profile migration failed: {error}");
-            }
-            app.manage(Arc::new(registry));
+            let migration_error = registry.migrate_legacy().err();
+            app.manage(PickerState {
+                registry: Arc::new(registry),
+                migration_error,
+            });
 
             let window = tauri::window::WindowBuilder::new(app, "picker")
                 .title("Folio — Choose a profile")

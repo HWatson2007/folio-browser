@@ -134,11 +134,20 @@ impl ProfileRegistry {
     }
 
     pub fn history_path(&self, id: &ProfileId) -> PathBuf {
-        self.profile_dir(id).join("history.sqlite3")
+        self.profile_dir(id).join(LEGACY_HISTORY_FILE)
     }
 
     pub fn lock_path(&self, id: &ProfileId) -> PathBuf {
         self.profile_dir(id).join(LOCK_FILE)
+    }
+
+    fn launch_lock_path(&self, id: &ProfileId) -> PathBuf {
+        self.profile_dir(id).join("launch.lock")
+    }
+
+    pub fn launch_ready_path(&self, id: &ProfileId, token: &ProfileId) -> PathBuf {
+        self.profile_dir(id)
+            .join(format!("launch-{}.ready", token.as_str()))
     }
 
     pub fn launcher_dir(&self) -> PathBuf {
@@ -146,14 +155,7 @@ impl ProfileRegistry {
     }
 
     pub fn load(&self) -> Result<Vec<ProfileRecord>, String> {
-        let path = self.registry_path();
-        if !path.exists() {
-            return Ok(Vec::new());
-        }
-        let bytes = fs::read(&path).map_err(|error| error.to_string())?;
-        let registry: RegistryFile =
-            serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-        Ok(registry.profiles)
+        self.load_unlocked()
     }
 
     pub fn find(&self, id: &ProfileId) -> Result<Option<ProfileRecord>, String> {
@@ -161,72 +163,169 @@ impl ProfileRegistry {
     }
 
     pub fn create(&self, name: &str) -> Result<ProfileRecord, String> {
-        let mut profiles = self.load()?;
-        let record = ProfileRecord {
-            id: ProfileId::new(),
-            name: name.trim().to_owned(),
-            color: PALETTE[profiles.len() % PALETTE.len()].to_owned(),
-            created_at: unix_millis(),
-            last_used_at: Some(unix_millis()),
-        };
-        fs::create_dir_all(self.profile_dir(&record.id)).map_err(|error| error.to_string())?;
+        let _registry_lock = self.acquire_registry_lock()?;
+        let mut profiles = self.load_unlocked()?;
+        let record = self.new_record(name, profiles.len());
+        let directory = self.profile_dir(&record.id);
+        fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
         profiles.push(record.clone());
-        self.save(&profiles)?;
+        if let Err(error) = self.save_unlocked(&profiles) {
+            let _ = fs::remove_dir_all(directory);
+            return Err(error);
+        }
         Ok(record)
     }
 
     pub fn rename(&self, id: &ProfileId, name: &str) -> Result<(), String> {
-        let mut profiles = self.load()?;
-        let record = profiles
-            .iter_mut()
-            .find(|record| &record.id == id)
-            .ok_or_else(|| "That profile no longer exists.".to_owned())?;
-        record.name = name.trim().to_owned();
-        self.save(&profiles)
+        self.mutate(|profiles| {
+            let record = profiles
+                .iter_mut()
+                .find(|record| &record.id == id)
+                .ok_or_else(|| "That profile no longer exists.".to_owned())?;
+            record.name = name.trim().to_owned();
+            Ok(())
+        })
     }
 
     pub fn touch_last_used(&self, id: &ProfileId) -> Result<(), String> {
-        let mut profiles = self.load()?;
-        let record = profiles
-            .iter_mut()
-            .find(|record| &record.id == id)
-            .ok_or_else(|| "That profile no longer exists.".to_owned())?;
-        record.last_used_at = Some(unix_millis());
-        self.save(&profiles)
+        self.mutate(|profiles| {
+            let record = profiles
+                .iter_mut()
+                .find(|record| &record.id == id)
+                .ok_or_else(|| "That profile no longer exists.".to_owned())?;
+            record.last_used_at = Some(unix_millis());
+            Ok(())
+        })
     }
 
-    /// Removes a profile entirely. Refuses if its window is currently open.
-    pub fn delete(&self, id: &ProfileId) -> Result<(), String> {
+    /// Reserves a profile while its child browser process initializes. The reservation
+    /// closes the launch/delete race until the child holds its own profile lock.
+    pub fn reserve_launch(&self, id: &ProfileId) -> Result<ProfileLaunchLock, String> {
+        let _registry_lock = self.acquire_registry_lock()?;
+        if !self.load_unlocked()?.iter().any(|record| &record.id == id) {
+            return Err("That profile no longer exists.".to_owned());
+        }
         if ProfileLock::is_locked(&self.lock_path(id)) {
+            return Err("This profile is already open in another window.".to_owned());
+        }
+        ProfileLaunchLock::acquire(&self.launch_lock_path(id), std::process::id())
+    }
+
+    pub fn signal_launch_ready(&self, id: &ProfileId, token: &ProfileId) -> Result<(), String> {
+        let path = self.launch_ready_path(id, token);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        fs::write(path, b"ready\n").map_err(|error| error.to_string())
+    }
+
+    /// Removes a profile entirely. Refuses while it is running or launching.
+    pub fn delete(&self, id: &ProfileId) -> Result<(), String> {
+        let _registry_lock = self.acquire_registry_lock()?;
+        if ProfileLock::is_locked(&self.lock_path(id))
+            || ProfileLaunchLock::is_locked(&self.launch_lock_path(id))
+        {
             return Err("Close this profile's window before deleting it.".to_owned());
         }
-        let mut profiles = self.load()?;
+
+        let mut profiles = self.load_unlocked()?;
         let before = profiles.len();
         profiles.retain(|record| &record.id != id);
         if profiles.len() == before {
             return Err("That profile no longer exists.".to_owned());
         }
-        self.save(&profiles)?;
-        let _ = fs::remove_dir_all(self.profile_dir(id));
-        let _ = fs::remove_dir_all(self.webview_dir(id));
-        Ok(())
+
+        remove_if_exists(&self.profile_dir(id)).map_err(|error| {
+            format!(
+                "Could not delete this profile's history data. The profile remains registered so you can retry: {error}"
+            )
+        })?;
+        remove_if_exists(&self.webview_dir(id)).map_err(|error| {
+            format!(
+                "Could not delete this profile's WebView data. The profile remains registered so you can retry: {error}"
+            )
+        })?;
+        self.save_unlocked(&profiles)
     }
 
-    fn save(&self, profiles: &[ProfileRecord]) -> Result<(), String> {
-        let lock_path = self.app_data_root.join(REGISTRY_LOCK_FILE);
+    /// Migrates legacy data by copying it first and committing the registry only after
+    /// every copy succeeds. The old installation is deliberately left untouched.
+    pub fn migrate_legacy(&self) -> Result<bool, String> {
+        let _registry_lock = self.acquire_registry_lock()?;
+        if self.registry_path().exists() {
+            return Ok(false);
+        }
+
+        let profile = self.new_record("Default", 0);
+        let migration = self.copy_legacy_data(&profile);
+        if let Err(error) = migration {
+            let _ = fs::remove_dir_all(self.profile_dir(&profile.id));
+            let _ = fs::remove_dir_all(self.webview_dir(&profile.id));
+            return Err(format!("Could not migrate existing Folio data: {error}"));
+        }
+
+        fs::create_dir_all(self.profile_dir(&profile.id)).map_err(|error| error.to_string())?;
+        if let Err(error) = self.save_unlocked(&[profile]) {
+            return Err(format!("Could not finalize the data migration: {error}"));
+        }
+        Ok(true)
+    }
+
+    fn new_record(&self, name: &str, index: usize) -> ProfileRecord {
+        ProfileRecord {
+            id: ProfileId::new(),
+            name: name.trim().to_owned(),
+            color: PALETTE[index % PALETTE.len()].to_owned(),
+            created_at: unix_millis(),
+            last_used_at: None,
+        }
+    }
+
+    fn mutate<T>(
+        &self,
+        change: impl FnOnce(&mut Vec<ProfileRecord>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let _registry_lock = self.acquire_registry_lock()?;
+        let mut profiles = self.load_unlocked()?;
+        let result = change(&mut profiles)?;
+        self.save_unlocked(&profiles)?;
+        Ok(result)
+    }
+
+    fn acquire_registry_lock(&self) -> Result<File, String> {
+        fs::create_dir_all(&self.app_data_root).map_err(|error| error.to_string())?;
         let lock = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
-            .open(lock_path)
+            .open(self.app_data_root.join(REGISTRY_LOCK_FILE))
             .map_err(|error| error.to_string())?;
         lock.try_lock_exclusive().map_err(|_| {
             "Another Folio launcher is editing profiles right now. Try again in a moment."
                 .to_owned()
         })?;
+        Ok(lock)
+    }
 
-        fs::create_dir_all(&self.app_data_root).map_err(|error| error.to_string())?;
+    fn load_unlocked(&self) -> Result<Vec<ProfileRecord>, String> {
+        let path = self.registry_path();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let bytes = fs::read(path).map_err(|error| error.to_string())?;
+        let registry: RegistryFile =
+            serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+        if registry.version != 1 {
+            return Err(format!(
+                "Unsupported profile registry version {}.",
+                registry.version
+            ));
+        }
+        Ok(registry.profiles)
+    }
+
+    fn save_unlocked(&self, profiles: &[ProfileRecord]) -> Result<(), String> {
         let payload = serde_json::to_vec_pretty(&RegistryFile {
             version: 1,
             profiles: profiles.to_vec(),
@@ -234,57 +333,41 @@ impl ProfileRegistry {
         .map_err(|error| error.to_string())?;
         let temporary = self.registry_path().with_extension("json.tmp");
         fs::write(&temporary, &payload).map_err(|error| error.to_string())?;
-        fs::rename(&temporary, self.registry_path()).map_err(|error| error.to_string())?;
-        let _ = lock.unlock();
-        Ok(())
+        fs::rename(&temporary, self.registry_path()).map_err(|error| error.to_string())
     }
 
-    /// One-shot migration from the pre-profile layout. Returns true if it ran.
-    pub fn migrate_legacy(&self) -> Result<bool, String> {
-        if self.registry_path().exists() {
-            return Ok(false);
-        }
-        let profile = self.create("Default")?;
-
+    fn copy_legacy_data(&self, profile: &ProfileRecord) -> Result<(), String> {
         let legacy_history = self.app_data_root.join(LEGACY_HISTORY_FILE);
         if legacy_history.exists() {
-            move_with_fallback(&legacy_history, &self.history_path(&profile.id));
+            copy_item(&legacy_history, &self.history_path(&profile.id))
+                .map_err(|error| error.to_string())?;
             for suffix in ["-wal", "-shm"] {
                 let source = append_suffix(&legacy_history, suffix);
                 if source.exists() {
-                    move_with_fallback(
+                    copy_item(
                         &source,
                         &append_suffix(&self.history_path(&profile.id), suffix),
-                    );
+                    )
+                    .map_err(|error| error.to_string())?;
                 }
             }
         }
 
         let legacy_local = &self.local_data_root;
-        if legacy_local.exists()
-            && !legacy_local.join(LAUNCHER_DIR).exists()
-            && !legacy_local.join(PROFILES_DIR).exists()
-            && legacy_local.join(LEGACY_WEBVIEW_MARKER).exists()
-        {
-            // Move each old child into the new profile's webview folder. The destination
-            // is itself inside this root, so the root cannot be renamed wholesale.
+        if legacy_local.exists() && legacy_local.join(LEGACY_WEBVIEW_MARKER).exists() {
             let destination = self.webview_dir(&profile.id);
-            if let Some(parent) = destination.parent() {
-                fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-            }
             fs::create_dir_all(&destination).map_err(|error| error.to_string())?;
-            let entries = fs::read_dir(legacy_local).map_err(|error| error.to_string())?;
-            for entry in entries {
+            for entry in fs::read_dir(legacy_local).map_err(|error| error.to_string())? {
                 let entry = entry.map_err(|error| error.to_string())?;
                 let name = entry.file_name();
                 if name == LAUNCHER_DIR || name == PROFILES_DIR {
                     continue;
                 }
-                move_with_fallback(&entry.path(), &destination.join(&name));
+                copy_item(&entry.path(), &destination.join(name))
+                    .map_err(|error| error.to_string())?;
             }
         }
-
-        Ok(true)
+        Ok(())
     }
 }
 
@@ -294,24 +377,11 @@ fn append_suffix(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(value)
 }
 
-/// Best-effort relocation with a copy fallback so a locked WebView2 or SQLite file on
-/// Windows cannot corrupt the launch; on failure the source is left untouched.
-fn move_with_fallback(source: &Path, destination: &Path) {
-    if let Some(parent) = destination.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if fs::rename(source, destination).is_ok() {
-        return;
-    }
-    if copy_item(source, destination).is_ok() {
-        let _ = fs::remove_dir_all(source);
-        let _ = fs::remove_file(source);
-    } else {
-        eprintln!(
-            "Folio could not migrate data from {} to {} and will leave it in place.",
-            source.display(),
-            destination.display()
-        );
+fn remove_if_exists(path: &Path) -> Result<(), String> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
     }
 }
 
@@ -338,36 +408,67 @@ pub struct ProfileLock {
     _file: File,
 }
 
+/// Held by the picker only while a child browser process is initializing.
+pub struct ProfileLaunchLock {
+    _file: File,
+}
+
 impl ProfileLock {
     pub fn acquire(path: &Path, pid: u32) -> Result<Self, String> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)
-            .map_err(|error| error.to_string())?;
-        file.try_lock_exclusive()
-            .map_err(|_| "This profile is already open in another window.".to_owned())?;
-        let _ = file.write_all(format!("{pid}\n").as_bytes());
-        Ok(Self { _file: file })
+        acquire_lock(path, pid, "This profile is already open in another window.")
+            .map(|_file| Self { _file })
     }
 
     /// Probes whether some other process currently holds a profile open.
     pub fn is_locked(path: &Path) -> bool {
-        let file = match OpenOptions::new().read(true).write(true).open(path) {
-            Ok(file) => file,
-            Err(_) => return false,
-        };
-        if file.try_lock_exclusive().is_ok() {
-            let _ = file.unlock();
-            false
-        } else {
-            true
-        }
+        is_lock_held(path)
+    }
+}
+
+impl ProfileLaunchLock {
+    fn acquire(path: &Path, pid: u32) -> Result<Self, String> {
+        acquire_lock(
+            path,
+            pid,
+            "This profile is already starting in another window.",
+        )
+        .map(|_file| Self { _file })
+    }
+
+    fn is_locked(path: &Path) -> bool {
+        is_lock_held(path)
+    }
+}
+
+fn acquire_lock(path: &Path, pid: u32, conflict_message: &str) -> Result<File, String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    file.try_lock_exclusive()
+        .map_err(|_| conflict_message.to_owned())?;
+    file.set_len(0).map_err(|error| error.to_string())?;
+    file.write_all(format!("{pid}\n").as_bytes())
+        .map_err(|error| error.to_string())?;
+    Ok(file)
+}
+
+fn is_lock_held(path: &Path) -> bool {
+    let file = match OpenOptions::new().read(true).write(true).open(path) {
+        Ok(file) => file,
+        Err(_) => return false,
+    };
+    if file.try_lock_exclusive().is_ok() {
+        let _ = file.unlock();
+        false
+    } else {
+        true
     }
 }
 
@@ -423,6 +524,7 @@ mod tests {
         let registry = temp_registry("registry");
         let first = registry.create("Work").unwrap();
         let second = registry.create("Personal").unwrap();
+        assert!(first.last_used_at.is_none());
         assert!(registry.find(&first.id).unwrap().is_some());
         assert_eq!(registry.load().unwrap().len(), 2);
 
@@ -432,6 +534,31 @@ mod tests {
         registry.delete(&second.id).unwrap();
         assert_eq!(registry.load().unwrap().len(), 1);
         assert!(registry.find(&second.id).unwrap().is_none());
+        cleanup(&registry);
+    }
+
+    #[test]
+    fn delete_keeps_the_registry_record_when_cleanup_fails() {
+        let registry = temp_registry("delete-failure");
+        let profile = registry.create("Work").unwrap();
+        let profile_dir = registry.profile_dir(&profile.id);
+        fs::remove_dir_all(&profile_dir).unwrap();
+        fs::write(&profile_dir, b"not a directory").unwrap();
+
+        let error = registry.delete(&profile.id).unwrap_err();
+        assert!(error.contains("remains registered"));
+        assert!(registry.find(&profile.id).unwrap().is_some());
+        cleanup(&registry);
+    }
+
+    #[test]
+    fn delete_refuses_a_launch_reservation() {
+        let registry = temp_registry("launch-reservation");
+        let profile = registry.create("Work").unwrap();
+        let reservation = registry.reserve_launch(&profile.id).unwrap();
+        assert!(registry.delete(&profile.id).is_err());
+        drop(reservation);
+        registry.delete(&profile.id).unwrap();
         cleanup(&registry);
     }
 
@@ -502,7 +629,7 @@ mod tests {
         assert_eq!(profiles[0].name, "Default");
         let id = &profiles[0].id;
         assert_eq!(fs::read(registry.history_path(id)).unwrap(), b"h1".to_vec());
-        assert!(!registry.app_data_root.join("history.sqlite3").exists());
+        assert!(registry.app_data_root.join("history.sqlite3").exists());
         assert!(
             registry
                 .webview_dir(id)
@@ -510,7 +637,7 @@ mod tests {
                 .join("x")
                 .exists()
         );
-        assert!(!registry.local_data_root.join("EBWebView").exists());
+        assert!(registry.local_data_root.join("EBWebView").exists());
 
         // Second migration must be a no-op.
         assert!(!registry.migrate_legacy().unwrap());

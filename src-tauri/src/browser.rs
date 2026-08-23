@@ -300,7 +300,7 @@ fn get_current_profile(profile: State<'_, crate::profile::ProfileRecord>) -> Pro
     ProfileSummary::from(&profile, true)
 }
 
-pub fn run(profile_id: ProfileId) {
+pub fn run(profile_id: ProfileId, launch_token: Option<ProfileId>) {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -440,6 +440,10 @@ pub fn run(profile_id: ProfileId) {
                     let _ = apply_layout(&resize_handle, &resize_layout);
                 }
             });
+
+            if let Some(token) = launch_token {
+                registry.signal_launch_ready(&profile_id, &token)?;
+            }
 
             Ok(())
         })

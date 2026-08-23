@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "core:window:allow-close",
+    "allow-get-migration-error",
     "allow-list-profiles",
     "allow-create-profile",
     "allow-rename-profile",

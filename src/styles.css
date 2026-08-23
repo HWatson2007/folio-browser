@@ -478,6 +478,16 @@ input:focus-visible {
   margin-top: 12px;
 }
 
+.migration-error {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  background: #fffaf0;
+  color: var(--accent-dark);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .picker-body {
   flex: 1;
   overflow-y: auto;

@@ -12,6 +12,7 @@ const COMMANDS: &[&str] = &[
     "export_history",
     "get_current_profile",
     // profile picker
+    "get_migration_error",
     "list_profiles",
     "create_profile",
     "rename_profile",
