@@ -1,7 +1,7 @@
 use crate::profile::{ProfileId, ProfileLock, ProfileRegistry, ProfileSummary};
 use std::sync::Arc;
 use tauri::webview::WebviewBuilder;
-use tauri::{LogicalPosition, LogicalSize, Manager, State, WebviewUrl};
+use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, State, WebviewUrl};
 
 #[tauri::command]
 fn list_profiles(registry: State<'_, Arc<ProfileRegistry>>) -> Result<Vec<ProfileSummary>, String> {
@@ -53,6 +53,26 @@ fn rename_profile(
 fn delete_profile(registry: State<'_, Arc<ProfileRegistry>>, id: String) -> Result<(), String> {
     let id = ProfileId::parse(&id)?;
     registry.delete(&id)
+}
+
+/// Keeps the child picker webview aligned with its native parent window.
+///
+/// Child webviews do not automatically resize when the parent is maximized or resized.
+fn apply_picker_layout(app: &AppHandle) -> Result<(), String> {
+    let picker = app
+        .get_webview("picker")
+        .ok_or_else(|| "The profile picker webview is not ready.".to_owned())?;
+    let window = picker.window();
+    let physical_size = window.inner_size().map_err(|error| error.to_string())?;
+    let scale = window.scale_factor().map_err(|error| error.to_string())?;
+    let size = physical_size.to_logical::<f64>(scale);
+
+    picker
+        .set_position(LogicalPosition::new(0.0, 0.0))
+        .map_err(|error| error.to_string())?;
+    picker
+        .set_size(LogicalSize::new(size.width, size.height))
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -112,6 +132,13 @@ pub fn run() {
                 LogicalPosition::new(0.0, 0.0),
                 LogicalSize::new(size.width, size.height),
             )?;
+
+            let resize_handle = app.handle().clone();
+            window.on_window_event(move |event| {
+                if matches!(event, tauri::WindowEvent::Resized(_)) {
+                    let _ = apply_picker_layout(&resize_handle);
+                }
+            });
 
             Ok(())
         })

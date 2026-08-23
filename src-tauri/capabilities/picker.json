@@ -5,6 +5,7 @@
   "webviews": ["picker"],
   "permissions": [
     "core:default",
+    "core:window:allow-close",
     "allow-list-profiles",
     "allow-create-profile",
     "allow-rename-profile",

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./styles.css";
 
 interface ProfileSummary {
@@ -26,6 +27,7 @@ const profileList = byId<HTMLUListElement>("profile-list");
 const emptyState = byId<HTMLElement>("empty-state");
 const createForm = byId<HTMLFormElement>("create-form");
 const createInput = byId<HTMLInputElement>("create-input");
+const createButton = byId<HTMLButtonElement>("create-button");
 const dialog = byId<HTMLElement>("dialog");
 const dialogTitle = byId<HTMLElement>("dialog-title");
 const dialogMessage = byId<HTMLElement>("dialog-message");
@@ -36,6 +38,8 @@ const toast = byId<HTMLElement>("toast");
 let profiles: ProfileSummary[] = [];
 let dialogState: DialogState | null = null;
 let toastTimer: number | undefined;
+let creatingProfile = false;
+let launchingProfile = false;
 
 const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
@@ -141,11 +145,14 @@ async function refreshProfiles(): Promise<void> {
 }
 
 async function launchProfile(id: string): Promise<void> {
+  if (launchingProfile) return;
+  launchingProfile = true;
   try {
     await invoke("launch_profile", { id });
-    await refreshProfiles();
+    await getCurrentWindow().close();
   } catch (error) {
     showToast(String(error));
+    launchingProfile = false;
   }
 }
 
@@ -205,14 +212,24 @@ async function confirmDialog(): Promise<void> {
 
 createForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (creatingProfile) return;
   const name = createInput.value.trim();
   if (!name) return;
+
+  creatingProfile = true;
+  createInput.disabled = true;
+  createButton.disabled = true;
   try {
     await invoke("create_profile", { name });
     createInput.value = "";
     await refreshProfiles();
   } catch (error) {
     showToast(String(error));
+  } finally {
+    creatingProfile = false;
+    createInput.disabled = false;
+    createButton.disabled = false;
+    createInput.focus();
   }
 });
 
@@ -225,10 +242,6 @@ dialog.addEventListener("click", (event) => {
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !dialog.hidden) {
     closeDialog();
-  } else if (!dialog.hidden) {
-    return;
-  } else if (event.key === "Enter" && document.activeElement === createInput) {
-    createForm.requestSubmit();
   }
 });
 
