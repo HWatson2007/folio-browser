@@ -8,6 +8,7 @@ use crate::history::{
 use crate::profile::{ProfileId, ProfileLock, ProfileRegistry, ProfileSummary};
 use serde::Serialize;
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
     path::PathBuf,
@@ -18,10 +19,16 @@ use std::{
 };
 use tauri::{
     Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewUrl,
-    webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder},
+    webview::{NewWindowResponse, WebviewBuilder},
 };
+use webview2_com::{
+    ContentLoadingEventHandler, NavigationCompletedEventHandler, NavigationStartingEventHandler,
+    take_pwstr,
+};
+use windows::core::{HSTRING, PWSTR};
 
 const HOME_URL: &str = "https://duckduckgo.com/";
+const PLACEHOLDER_URL: &str = "about:blank";
 const TOOLBAR_HEIGHT: f64 = 76.0;
 
 struct LayoutState {
@@ -35,6 +42,168 @@ struct NavigationEvent {
     url: String,
     status: NavigationStatus,
     title: Option<String>,
+}
+
+#[derive(Clone)]
+struct TrackedNavigation {
+    entry_id: u64,
+    url: String,
+}
+
+#[derive(Default)]
+struct NavigationTrackerState {
+    by_navigation_id: HashMap<u64, TrackedNavigation>,
+    current: Option<TrackedNavigation>,
+}
+
+#[derive(Default)]
+struct NavigationTracker {
+    state: Mutex<NavigationTrackerState>,
+}
+
+impl NavigationTracker {
+    fn track(&self, navigation_id: u64, entry: &HistoryEntry) -> Result<(), String> {
+        let tracked = TrackedNavigation {
+            entry_id: entry.id,
+            url: entry.url.clone(),
+        };
+        let mut state = self.state.lock().map_err(|error| error.to_string())?;
+        state
+            .by_navigation_id
+            .insert(navigation_id, tracked.clone());
+        state.current = Some(tracked);
+        Ok(())
+    }
+
+    fn get(&self, navigation_id: u64) -> Option<TrackedNavigation> {
+        self.state
+            .lock()
+            .ok()?
+            .by_navigation_id
+            .get(&navigation_id)
+            .cloned()
+    }
+
+    fn finish(&self, navigation_id: u64) -> Option<TrackedNavigation> {
+        self.state
+            .lock()
+            .ok()?
+            .by_navigation_id
+            .remove(&navigation_id)
+    }
+
+    fn current(&self) -> Option<TrackedNavigation> {
+        self.state.lock().ok()?.current.clone()
+    }
+}
+
+fn emit_navigation(app: &tauri::AppHandle, tracked: &TrackedNavigation, status: NavigationStatus) {
+    let _ = app.emit_to(
+        "chrome",
+        "browser:navigation",
+        NavigationEvent {
+            url: tracked.url.clone(),
+            status,
+            title: None,
+        },
+    );
+}
+
+fn navigation_id(
+    read: impl FnOnce(*mut u64) -> windows::core::Result<()>,
+) -> windows::core::Result<u64> {
+    let mut id = 0;
+    read(&mut id)?;
+    Ok(id)
+}
+
+fn attach_navigation_history(
+    webview: &tauri::Webview,
+    app: tauri::AppHandle,
+    history: Arc<HistoryStore>,
+    tracker: Arc<NavigationTracker>,
+) -> Result<(), String> {
+    webview
+        .with_webview(move |platform| {
+            let result = (|| -> windows::core::Result<()> {
+                let controller = platform.controller();
+                let webview = unsafe { controller.CoreWebView2()? };
+
+                let start_history = history.clone();
+                let start_tracker = tracker.clone();
+                let start_app = app.clone();
+                let start_handler =
+                    NavigationStartingEventHandler::create(Box::new(move |_, args| {
+                        let Some(args) = args else {
+                            return Ok(());
+                        };
+                        let mut raw_url = PWSTR::null();
+                        unsafe { args.Uri(&mut raw_url)? };
+                        let url = take_pwstr(raw_url);
+                        if url == PLACEHOLDER_URL {
+                            return Ok(());
+                        }
+                        let id = navigation_id(|value| unsafe { args.NavigationId(value) })?;
+                        if let Ok(entry) = start_history.record_attempt(&url) {
+                            if matches!(url.split(':').next(), Some("http" | "https")) {
+                                let _ = start_tracker.track(id, &entry);
+                            }
+                            let _ = start_app.emit_to(
+                                "chrome",
+                                "browser:navigation",
+                                NavigationEvent {
+                                    url: entry.url,
+                                    status: entry.status,
+                                    title: entry.title,
+                                },
+                            );
+                        }
+                        Ok(())
+                    }));
+                unsafe { webview.add_NavigationStarting(&start_handler, &mut 0)? };
+
+                let loading_history = history.clone();
+                let loading_tracker = tracker.clone();
+                let loading_app = app.clone();
+                let loading_handler =
+                    ContentLoadingEventHandler::create(Box::new(move |_, args| {
+                        let Some(args) = args else {
+                            return Ok(());
+                        };
+                        let id = navigation_id(|value| unsafe { args.NavigationId(value) })?;
+                        if let Some(tracked) = loading_tracker.get(id) {
+                            let status = NavigationStatus::Started;
+                            let _ = loading_history.update_status(tracked.entry_id, status);
+                            emit_navigation(&loading_app, &tracked, status);
+                        }
+                        Ok(())
+                    }));
+                unsafe { webview.add_ContentLoading(&loading_handler, &mut 0)? };
+
+                let completed_handler =
+                    NavigationCompletedEventHandler::create(Box::new(move |_, args| {
+                        let Some(args) = args else {
+                            return Ok(());
+                        };
+                        let id = navigation_id(|value| unsafe { args.NavigationId(value) })?;
+                        if let Some(tracked) = tracker.finish(id) {
+                            let status = NavigationStatus::Completed;
+                            let _ = history.update_status(tracked.entry_id, status);
+                            emit_navigation(&app, &tracked, status);
+                        }
+                        Ok(())
+                    }));
+                unsafe { webview.add_NavigationCompleted(&completed_handler, &mut 0)? };
+
+                let home = HSTRING::from(HOME_URL);
+                unsafe { webview.Navigate(&home)? };
+                Ok(())
+            })();
+            if let Err(error) = result {
+                eprintln!("Could not attach navigation history handlers: {error}");
+            }
+        })
+        .map_err(|error| error.to_string())
 }
 
 #[derive(Serialize)]
@@ -393,53 +562,30 @@ pub fn run(profile_id: ProfileId, launch_token: Option<ProfileId>) {
             let scale = window.scale_factor()?;
             let size = physical_size.to_logical::<f64>(scale);
 
-            let navigation_history = history.clone();
-            let navigation_handle = app.handle().clone();
-            let load_history = history.clone();
-            let load_handle = app.handle().clone();
             let popup_handle = app.handle().clone();
-            let title_history = history;
+            let title_history = history.clone();
+            let navigation_tracker = Arc::new(NavigationTracker::default());
+            let title_tracker = navigation_tracker.clone();
+            let placeholder_allowed = Arc::new(AtomicBool::new(true));
+            let navigation_filter_placeholder = placeholder_allowed.clone();
             let profile_name = profile.name.clone();
 
+            // Start on a neutral page so the native WebView2 handlers can be attached before
+            // the first remote navigation begins.
             let content = WebviewBuilder::new(
                 "content",
-                WebviewUrl::External(tauri::Url::parse(HOME_URL)?),
+                WebviewUrl::External(tauri::Url::parse(PLACEHOLDER_URL)?),
             );
             let content = content
                 .data_directory(webview_dir.clone())
                 .enable_clipboard_access()
                 .background_color(tauri::webview::Color(255, 255, 255, 255))
                 .on_navigation(move |url| {
-                    let url = url.to_string();
-                    if let Ok(entry) = navigation_history.record_attempt(&url) {
-                        let _ = navigation_handle.emit_to(
-                            "chrome",
-                            "browser:navigation",
-                            NavigationEvent {
-                                url: entry.url,
-                                status: entry.status,
-                                title: entry.title,
-                            },
-                        );
+                    if url.as_str() == PLACEHOLDER_URL {
+                        navigation_filter_placeholder.swap(false, Ordering::Relaxed)
+                    } else {
+                        matches!(url.scheme(), "http" | "https")
                     }
-                    matches!(url.split(':').next(), Some("http" | "https"))
-                })
-                .on_page_load(move |_webview, payload| {
-                    let url = payload.url().to_string();
-                    let status = match payload.event() {
-                        PageLoadEvent::Started => NavigationStatus::Started,
-                        PageLoadEvent::Finished => NavigationStatus::Completed,
-                    };
-                    let _ = load_history.update_status(&url, status);
-                    let _ = load_handle.emit_to(
-                        "chrome",
-                        "browser:navigation",
-                        NavigationEvent {
-                            url,
-                            status,
-                            title: None,
-                        },
-                    );
                 })
                 .on_new_window(move |url, _features| {
                     let _ =
@@ -447,13 +593,12 @@ pub fn run(profile_id: ProfileId, launch_token: Option<ProfileId>) {
                     NewWindowResponse::Deny
                 })
                 .on_document_title_changed(move |webview, title| {
-                    if let Ok(url) = webview.url() {
-                        let url = url.to_string();
-                        let _ = title_history.update_title(&url, &title);
-                        let _ = webview
-                            .window()
-                            .set_title(&format!("{title} — {profile_name} — Folio"));
+                    if let Some(tracked) = title_tracker.current() {
+                        let _ = title_history.update_title(tracked.entry_id, &title);
                     }
+                    let _ = webview
+                        .window()
+                        .set_title(&format!("{title} — {profile_name} — Folio"));
                 });
 
             let content = window.add_child(
@@ -461,6 +606,8 @@ pub fn run(profile_id: ProfileId, launch_token: Option<ProfileId>) {
                 LogicalPosition::new(0.0, TOOLBAR_HEIGHT),
                 LogicalSize::new(size.width, (size.height - TOOLBAR_HEIGHT).max(1.0)),
             )?;
+            placeholder_allowed.store(false, Ordering::Relaxed);
+            attach_navigation_history(&content, app.handle().clone(), history, navigation_tracker)?;
             attach_download_handler(&content, app.handle().clone(), downloads)?;
 
             let chrome = WebviewBuilder::new("chrome", WebviewUrl::App("index.html".into()))

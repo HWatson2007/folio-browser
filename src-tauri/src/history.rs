@@ -177,19 +177,17 @@ impl HistoryStore {
         Ok(entry)
     }
 
-    pub fn update_status(&self, url: &str, status: NavigationStatus) -> Result<(), String> {
+    pub fn update_status(&self, id: u64, status: NavigationStatus) -> Result<(), String> {
         let connection = self.connection.lock().map_err(|error| error.to_string())?;
         connection
             .execute(
                 "UPDATE history_entries
                  SET status = ?, updated_at = ?
-                 WHERE id = (
-                    SELECT id FROM history_entries WHERE url = ? ORDER BY id DESC LIMIT 1
-                 ) AND status <> ?",
+                 WHERE id = ? AND status <> ?",
                 params![
                     status.as_database_value(),
                     sqlite_integer(unix_millis())?,
-                    url,
+                    sqlite_integer(id)?,
                     status.as_database_value(),
                 ],
             )
@@ -197,7 +195,7 @@ impl HistoryStore {
         Ok(())
     }
 
-    pub fn update_title(&self, url: &str, title: &str) -> Result<(), String> {
+    pub fn update_title(&self, id: u64, title: &str) -> Result<(), String> {
         let title = title.trim();
         if title.is_empty() {
             return Ok(());
@@ -207,10 +205,13 @@ impl HistoryStore {
             .execute(
                 "UPDATE history_entries
                  SET title = ?, updated_at = ?
-                 WHERE id = (
-                    SELECT id FROM history_entries WHERE url = ? ORDER BY id DESC LIMIT 1
-                 ) AND (title IS NULL OR title <> ?)",
-                params![title, sqlite_integer(unix_millis())?, url, title],
+                 WHERE id = ? AND (title IS NULL OR title <> ?)",
+                params![
+                    title,
+                    sqlite_integer(unix_millis())?,
+                    sqlite_integer(id)?,
+                    title
+                ],
             )
             .map_err(|error| error.to_string())?;
         Ok(())
@@ -302,7 +303,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn persists_history_entries_and_updates_only_the_latest_matching_url() {
+    fn persists_history_entries_and_updates_by_stable_id() {
         let directory = std::env::temp_dir().join(format!(
             "folio-browser-history-test-{}-{}",
             std::process::id(),
@@ -313,19 +314,17 @@ mod tests {
         let first = {
             let history = HistoryStore::open(&path).unwrap();
             let first = history.record_attempt("https://example.com/").unwrap();
-            history
-                .update_status("https://example.com/", NavigationStatus::Completed)
-                .unwrap();
-            history
-                .update_title("https://example.com/", "First title")
-                .unwrap();
             let second = history.record_attempt("https://example.com/").unwrap();
+
+            // A late event from the first visit must not update the newer visit to the same URL.
             history
-                .update_status("https://example.com/", NavigationStatus::Started)
+                .update_status(first.id, NavigationStatus::Completed)
                 .unwrap();
+            history.update_title(first.id, "First title").unwrap();
             history
-                .update_title("https://example.com/", "Second title")
+                .update_status(second.id, NavigationStatus::Started)
                 .unwrap();
+            history.update_title(second.id, "Second title").unwrap();
 
             let entries = history.entries_newest_first().unwrap();
             assert_eq!(entries.len(), 2);
