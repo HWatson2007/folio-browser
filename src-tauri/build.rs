@@ -9,6 +9,7 @@ const COMMANDS: &[&str] = &[
     "set_content_visible",
     "set_content_offset",
     "get_history",
+    "get_history_page",
     "export_history",
     "get_current_profile",
     "get_downloads",

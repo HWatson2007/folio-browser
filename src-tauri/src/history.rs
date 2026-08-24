@@ -217,6 +217,8 @@ impl HistoryStore {
         Ok(())
     }
 
+    pub const MAX_PAGE_LIMIT: u64 = 200;
+
     pub fn entries_newest_first(&self) -> Result<Vec<HistoryEntry>, String> {
         let connection = self.connection.lock().map_err(|error| error.to_string())?;
         let mut statement = connection
@@ -233,6 +235,90 @@ impl HistoryStore {
             entries.push(Self::entry_from_row(row)?);
         }
         Ok(entries)
+    }
+
+    pub fn history_page(
+        &self,
+        limit: u64,
+        offset: u64,
+        query: Option<String>,
+    ) -> Result<(Vec<HistoryEntry>, u64), String> {
+        let limit = limit.clamp(1, Self::MAX_PAGE_LIMIT);
+        let normalized = query
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        let escaped = normalized.as_ref().map(|value| escape_like_pattern(value));
+
+        let connection = self.connection.lock().map_err(|error| error.to_string())?;
+
+        let total: i64 = if let Some(ref pattern) = escaped {
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM history_entries WHERE (
+                        url LIKE '%' || ?1 || '%' ESCAPE '\\' COLLATE NOCASE
+                        OR COALESCE(title, '') LIKE '%' || ?1 || '%' ESCAPE '\\' COLLATE NOCASE
+                        OR COALESCE(submitted_input, '') LIKE '%' || ?1 || '%' ESCAPE '\\' COLLATE NOCASE
+                        OR COALESCE(search_query, '') LIKE '%' || ?1 || '%' ESCAPE '\\' COLLATE NOCASE
+                        OR source LIKE '%' || ?1 || '%' ESCAPE '\\' COLLATE NOCASE
+                    )",
+                    params![pattern],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?
+        } else {
+            connection
+                .query_row("SELECT COUNT(*) FROM history_entries", [], |row| row.get(0))
+                .map_err(|error| error.to_string())?
+        };
+        let total = u64::try_from(total)
+            .map_err(|_| "History database returned a negative total.".to_owned())?;
+
+        let mut entries = Vec::new();
+        if let Some(pattern) = escaped {
+            let mut statement = connection
+                .prepare(
+                    "SELECT id, attempted_at, updated_at, url, title, status, source,
+                            submitted_input, search_query, search_url
+                     FROM history_entries
+                     WHERE (
+                        url LIKE '%' || ?1 || '%' ESCAPE '\\' COLLATE NOCASE
+                        OR COALESCE(title, '') LIKE '%' || ?1 || '%' ESCAPE '\\' COLLATE NOCASE
+                        OR COALESCE(submitted_input, '') LIKE '%' || ?1 || '%' ESCAPE '\\' COLLATE NOCASE
+                        OR COALESCE(search_query, '') LIKE '%' || ?1 || '%' ESCAPE '\\' COLLATE NOCASE
+                        OR source LIKE '%' || ?1 || '%' ESCAPE '\\' COLLATE NOCASE
+                     )
+                     ORDER BY attempted_at DESC, id DESC
+                     LIMIT ?2 OFFSET ?3",
+                )
+                .map_err(|error| error.to_string())?;
+            let mut rows = statement
+                .query(params![
+                    pattern,
+                    sqlite_integer(limit)?,
+                    sqlite_integer(offset)?
+                ])
+                .map_err(|error| error.to_string())?;
+            while let Some(row) = rows.next().map_err(|error| error.to_string())? {
+                entries.push(Self::entry_from_row(row)?);
+            }
+        } else {
+            let mut statement = connection
+                .prepare(
+                    "SELECT id, attempted_at, updated_at, url, title, status, source,
+                            submitted_input, search_query, search_url
+                     FROM history_entries
+                     ORDER BY attempted_at DESC, id DESC
+                     LIMIT ?1 OFFSET ?2",
+                )
+                .map_err(|error| error.to_string())?;
+            let mut rows = statement
+                .query(params![sqlite_integer(limit)?, sqlite_integer(offset)?])
+                .map_err(|error| error.to_string())?;
+            while let Some(row) = rows.next().map_err(|error| error.to_string())? {
+                entries.push(Self::entry_from_row(row)?);
+            }
+        }
+        Ok((entries, total))
     }
 
     fn entry_from_row(row: &Row<'_>) -> Result<HistoryEntry, String> {
@@ -289,6 +375,17 @@ fn duckduckgo_search_query(url: &str) -> Option<String> {
     url.query_pairs()
         .find(|(key, value)| key == "q" && !value.trim().is_empty())
         .map(|(_, value)| value.into_owned())
+}
+
+fn escape_like_pattern(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        if character == '\\' || character == '%' || character == '_' {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
 }
 
 pub fn timestamp_iso(timestamp: u64) -> Result<String, String> {

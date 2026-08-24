@@ -15,6 +15,7 @@
     "allow-set-content-visible",
     "allow-set-content-offset",
     "allow-get-history",
+    "allow-get-history-page",
     "allow-export-history",
     "allow-get-current-profile",
     "allow-get-downloads",

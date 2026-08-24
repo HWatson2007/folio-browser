@@ -400,9 +400,31 @@ fn set_content_offset(
     apply_layout(&app, &layout)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryPage {
+    entries: Vec<HistoryEntry>,
+    total: u64,
+}
+
 #[tauri::command]
 fn get_history(history: State<'_, Arc<HistoryStore>>) -> Result<Vec<HistoryEntry>, String> {
     history.entries_newest_first()
+}
+
+#[tauri::command]
+fn get_history_page(
+    history: State<'_, Arc<HistoryStore>>,
+    limit: Option<u64>,
+    offset: Option<u64>,
+    query: Option<String>,
+) -> Result<HistoryPage, String> {
+    let (entries, total) = history.history_page(
+        limit.unwrap_or(HistoryStore::MAX_PAGE_LIMIT),
+        offset.unwrap_or(0),
+        query,
+    )?;
+    Ok(HistoryPage { entries, total })
 }
 
 #[tauri::command]
@@ -513,6 +535,7 @@ pub fn run(profile_id: ProfileId, launch_token: Option<ProfileId>) {
             set_content_visible,
             set_content_offset,
             get_history,
+            get_history_page,
             export_history,
             get_current_profile,
             get_downloads,

@@ -225,6 +225,12 @@
           "markdownDescription": "Enables the get_history command without any pre-configured scope."
         },
         {
+          "description": "Enables the get_history_page command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-history-page",
+          "markdownDescription": "Enables the get_history_page command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_migration_error command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-migration-error",
@@ -349,6 +355,12 @@
           "type": "string",
           "const": "deny-get-history",
           "markdownDescription": "Denies the get_history command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_history_page command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-history-page",
+          "markdownDescription": "Denies the get_history_page command without any pre-configured scope."
         },
         {
           "description": "Denies the get_migration_error command without any pre-configured scope.",

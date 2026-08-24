@@ -446,6 +446,38 @@ input:focus-visible {
   font-style: italic;
 }
 
+.history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 28px auto 0;
+}
+
+.history-pagination[hidden] {
+  display: none !important;
+}
+
+.history-pagination button {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+}
+
+.history-pagination button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.history-page-label {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
 .empty-history {
   margin: 70px auto;
   color: var(--muted);

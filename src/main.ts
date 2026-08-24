@@ -18,6 +18,11 @@ interface HistoryEntry {
   searchUrl: string | null;
 }
 
+interface HistoryPage {
+  entries: HistoryEntry[];
+  total: number;
+}
+
 interface NavigationEvent {
   url: string;
   status: NavigationStatus;
@@ -72,6 +77,10 @@ const openWarningMessage = byId<HTMLElement>("open-warning-message");
 const historySearch = byId<HTMLInputElement>("history-search");
 const historyList = byId<HTMLElement>("history-list");
 const historySummary = byId<HTMLElement>("history-summary");
+const historyPagination = byId<HTMLElement>("history-pagination");
+const historyPrevButton = byId<HTMLButtonElement>("history-prev");
+const historyNextButton = byId<HTMLButtonElement>("history-next");
+const historyPageLabel = byId<HTMLElement>("history-page-label");
 const loadIndicator = byId<HTMLElement>("load-indicator");
 const profileBadge = byId<HTMLElement>("profile-badge");
 const toast = byId<HTMLElement>("toast");
@@ -79,6 +88,11 @@ const toast = byId<HTMLElement>("toast");
 let profileSlug = "profile";
 
 let historyEntries: HistoryEntry[] = [];
+let historyTotal = 0;
+let historyPage = 0;
+const HISTORY_PAGE_SIZE = 200;
+let historyQuery = "";
+let historySearchSeq = 0;
 let downloadEntries: DownloadEntry[] = [];
 let historyOpen = false;
 let downloadsOpen = false;
@@ -262,79 +276,120 @@ function displayTitle(entry: HistoryEntry): string {
   }
 }
 
-function matchesHistory(entry: HistoryEntry, query: string): boolean {
-  const haystack = [entry.title, entry.url, entry.submittedInput, entry.searchQuery, entry.source]
-    .filter(Boolean)
-    .join("\n")
-    .toLocaleLowerCase();
-  return haystack.includes(query.toLocaleLowerCase());
+function clampHistoryPage(page: number): number {
+  if (historyTotal === 0) return 0;
+  const maxPage = Math.max(0, Math.ceil(historyTotal / HISTORY_PAGE_SIZE) - 1);
+  return Math.min(Math.max(0, page), maxPage);
 }
 
 function renderHistory(): void {
-  const query = historySearch.value.trim();
-  const visible = query ? historyEntries.filter((entry) => matchesHistory(entry, query)) : historyEntries;
   historyList.replaceChildren();
-  historySummary.textContent = query
-    ? `${visible.length.toLocaleString()} of ${historyEntries.length.toLocaleString()} recorded attempts match.`
-    : `${historyEntries.length.toLocaleString()} navigation attempts, stored locally and ready to export.`;
 
-  if (visible.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "empty-history";
-    empty.textContent = query ? "No ledger entries match this search." : "The ledger is empty. Your first navigation will appear here.";
-    historyList.append(empty);
-    return;
+  const totalPages = historyTotal === 0 ? 0 : Math.ceil(historyTotal / HISTORY_PAGE_SIZE);
+  const currentPage = totalPages === 0 ? 0 : historyPage + 1;
+  const showing = historyEntries.length;
+  const offset = historyPage * HISTORY_PAGE_SIZE;
+  const rangeStart = historyTotal === 0 || showing === 0 ? 0 : offset + 1;
+  const rangeEnd = offset + showing;
+
+  if (historyQuery) {
+    historySummary.textContent =
+      historyTotal === 0
+        ? "No ledger entries match this search."
+        : `${rangeStart.toLocaleString()}–${rangeEnd.toLocaleString()} of ${historyTotal.toLocaleString()} matching entries · page ${currentPage.toLocaleString()} of ${totalPages.toLocaleString()}`;
+  } else {
+    historySummary.textContent =
+      historyTotal === 0
+        ? "The ledger is empty. Your first navigation will appear here."
+        : `${rangeStart.toLocaleString()}–${rangeEnd.toLocaleString()} of ${historyTotal.toLocaleString()} navigation attempts · page ${currentPage.toLocaleString()} of ${totalPages.toLocaleString()}`;
   }
 
-  let previousDay = "";
-  for (const entry of visible) {
-    const day = formatDay(entry.attemptedAt);
-    if (day !== previousDay) {
-      const dayHeading = document.createElement("h2");
-      dayHeading.className = "day-heading";
-      dayHeading.textContent = day;
-      historyList.append(dayHeading);
-      previousDay = day;
+  if (showing === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-history";
+    empty.textContent = historyQuery ? "No ledger entries match this search." : "The ledger is empty. Your first navigation will appear here.";
+    historyList.append(empty);
+  } else {
+    let previousDay = "";
+    for (const entry of historyEntries) {
+      const day = formatDay(entry.attemptedAt);
+      if (day !== previousDay) {
+        const dayHeading = document.createElement("h2");
+        dayHeading.className = "day-heading";
+        dayHeading.textContent = day;
+        historyList.append(dayHeading);
+        previousDay = day;
+      }
+
+      const row = document.createElement("article");
+      row.className = "history-entry";
+
+      const time = document.createElement("time");
+      time.dateTime = new Date(entry.attemptedAt).toISOString();
+      time.textContent = formatTime(entry.attemptedAt);
+
+      const details = document.createElement("div");
+      details.className = "entry-details";
+
+      const titleButton = document.createElement("button");
+      titleButton.className = "entry-title";
+      titleButton.type = "button";
+      titleButton.textContent = displayTitle(entry);
+      titleButton.title = `Open ${entry.url}`;
+      titleButton.addEventListener("click", async () => {
+        await closeHistory();
+        await invoke("navigate", { input: entry.url, source: "history" });
+      });
+
+      const url = document.createElement("p");
+      url.className = "entry-url";
+      url.textContent = entry.url;
+
+      const metadata = document.createElement("p");
+      metadata.className = "entry-metadata";
+      const searchDetail = entry.submittedInput ? ` | submitted: ${entry.submittedInput}` : "";
+      metadata.textContent = `${entry.status} | ${entry.source}${searchDetail}`;
+
+      details.append(titleButton, url, metadata);
+      row.append(time, details);
+      historyList.append(row);
     }
+  }
 
-    const row = document.createElement("article");
-    row.className = "history-entry";
-
-    const time = document.createElement("time");
-    time.dateTime = new Date(entry.attemptedAt).toISOString();
-    time.textContent = formatTime(entry.attemptedAt);
-
-    const details = document.createElement("div");
-    details.className = "entry-details";
-
-    const titleButton = document.createElement("button");
-    titleButton.className = "entry-title";
-    titleButton.type = "button";
-    titleButton.textContent = displayTitle(entry);
-    titleButton.title = `Open ${entry.url}`;
-    titleButton.addEventListener("click", async () => {
-      await closeHistory();
-      await invoke("navigate", { input: entry.url, source: "history" });
-    });
-
-    const url = document.createElement("p");
-    url.className = "entry-url";
-    url.textContent = entry.url;
-
-    const metadata = document.createElement("p");
-    metadata.className = "entry-metadata";
-    const searchDetail = entry.submittedInput ? ` | submitted: ${entry.submittedInput}` : "";
-    metadata.textContent = `${entry.status} | ${entry.source}${searchDetail}`;
-
-    details.append(titleButton, url, metadata);
-    row.append(time, details);
-    historyList.append(row);
+  const hasPages = totalPages > 1;
+  historyPagination.hidden = !hasPages;
+  if (hasPages) {
+    historyPageLabel.textContent = `Page ${currentPage.toLocaleString()} of ${totalPages.toLocaleString()}`;
+    historyPrevButton.disabled = historyPage <= 0;
+    historyNextButton.disabled = historyPage >= totalPages - 1;
   }
 }
 
-async function refreshHistory(): Promise<void> {
-  historyEntries = await invoke<HistoryEntry[]>("get_history");
+async function fetchHistoryPage(page: number, query: string): Promise<void> {
+  const seq = ++historySearchSeq;
+  const offset = page * HISTORY_PAGE_SIZE;
+  const normalizedQuery = query.trim() ? query.trim() : null;
+  const result = await invoke<HistoryPage>("get_history_page", {
+    limit: HISTORY_PAGE_SIZE,
+    offset,
+    query: normalizedQuery,
+  });
+  if (seq !== historySearchSeq) return;
+  historyEntries = result.entries;
+  historyTotal = result.total;
+  const clamped = clampHistoryPage(page);
+  if (clamped !== page) {
+    // Total shrank while browsing; refetch clamped page.
+    await fetchHistoryPage(clamped, query);
+    return;
+  }
+  historyPage = clamped;
   renderHistory();
+}
+
+async function refreshHistory(): Promise<void> {
+  const clamped = clampHistoryPage(historyPage);
+  await fetchHistoryPage(clamped, historyQuery);
 }
 
 async function openHistory(): Promise<void> {
@@ -434,7 +489,20 @@ byId<HTMLButtonElement>("confirm-open-button").addEventListener("click", async (
 });
 historySearch.addEventListener("input", () => {
   window.clearTimeout(searchTimer);
-  searchTimer = window.setTimeout(renderHistory, 800);
+  searchTimer = window.setTimeout(() => {
+    historyQuery = historySearch.value.trim();
+    historyPage = 0;
+    void fetchHistoryPage(0, historyQuery).catch((error) => showToast(String(error)));
+  }, 400);
+});
+historyPrevButton.addEventListener("click", () => {
+  if (historyPage <= 0) return;
+  void fetchHistoryPage(historyPage - 1, historyQuery).catch((error) => showToast(String(error)));
+});
+historyNextButton.addEventListener("click", () => {
+  const maxPage = Math.max(0, Math.ceil(historyTotal / HISTORY_PAGE_SIZE) - 1);
+  if (historyPage >= maxPage) return;
+  void fetchHistoryPage(historyPage + 1, historyQuery).catch((error) => showToast(String(error)));
 });
 byId<HTMLButtonElement>("export-json-button").addEventListener("click", () => exportHistory("json"));
 byId<HTMLButtonElement>("export-csv-button").addEventListener("click", () => exportHistory("csv"));
