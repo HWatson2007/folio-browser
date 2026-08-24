@@ -5,7 +5,7 @@ use crate::download::{
 use crate::history::{
     HistoryEntry, HistoryStore, NavigationStatus, PendingNavigation, timestamp_iso,
 };
-use crate::profile::{ProfileId, ProfileLock, ProfileRegistry, ProfileSummary};
+use crate::profile::{ProfileId, ProfileRegistry, ProfileSummary};
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -525,12 +525,15 @@ pub fn run(profile_id: ProfileId, launch_token: Option<ProfileId>) {
             let local_data = app.path().app_local_data_dir()?;
             let registry = ProfileRegistry::new(app_data, local_data);
 
-            let profile = registry
-                .find(&profile_id)?
-                .ok_or_else(|| format!("Unknown profile id: {}", profile_id.as_str()))?;
-
-            let lock = ProfileLock::acquire(&registry.lock_path(&profile_id), std::process::id())
-                .map_err(|message| format!("{message}: {}", profile.name))?;
+            let (profile, lock) = registry
+                .acquire_for_launch(&profile_id)
+                .map_err(|message| {
+                    if message == "That profile no longer exists." {
+                        format!("Unknown profile id: {}", profile_id.as_str())
+                    } else {
+                        message
+                    }
+                })?;
             app.manage(lock);
 
             let history_path = registry.history_path(&profile_id);

@@ -162,6 +162,7 @@ impl ProfileRegistry {
         self.load_unlocked()
     }
 
+    #[allow(dead_code)]
     pub fn find(&self, id: &ProfileId) -> Result<Option<ProfileRecord>, String> {
         Ok(self.load()?.into_iter().find(|record| &record.id == id))
     }
@@ -212,7 +213,39 @@ impl ProfileRegistry {
         if ProfileLock::is_locked(&self.lock_path(id)) {
             return Err("This profile is already open in another window.".to_owned());
         }
+        if ProfileLaunchLock::is_locked(&self.launch_lock_path(id)) {
+            return Err("This profile is already starting in another window.".to_owned());
+        }
         ProfileLaunchLock::acquire(&self.launch_lock_path(id), std::process::id())
+    }
+
+    /// Atomically validates that `id` exists in the registry and then acquires the
+    /// live profile lock while still holding the registry lock. This is the unified
+    /// entry point for both the picker-triggered launch and direct CLI `--profile`
+    /// startup so that a concurrent `delete` (which must obtain the registry lock
+    /// first and then probes the locks) cannot slip in between the existence check
+    /// and the lock. The registry lock is dropped only after the profile lock is
+    /// held, so the delete path is serialized against startup. The launch lock is
+    /// intentionally *not* checked here — a picker-spawned browser legitimately
+    /// starts while its parent still holds `launch.lock` — so that picker and CLI
+    /// paths can share this single atomic entry. Double-start is still serialized
+    /// by the profile lock itself (and by `reserve_launch`'s launch-lock check).
+    pub fn acquire_for_launch(
+        &self,
+        id: &ProfileId,
+    ) -> Result<(ProfileRecord, ProfileLock), String> {
+        let _registry_lock = self.acquire_registry_lock()?;
+        let profile = self
+            .load_unlocked()?
+            .into_iter()
+            .find(|record| &record.id == id)
+            .ok_or_else(|| "That profile no longer exists.".to_owned())?;
+        if ProfileLock::is_locked(&self.lock_path(id)) {
+            return Err("This profile is already open in another window.".to_owned());
+        }
+        let lock = ProfileLock::acquire(&self.lock_path(id), std::process::id())
+            .map_err(|message| format!("{message}: {}", profile.name))?;
+        Ok((profile, lock))
     }
 
     pub fn signal_launch_ready(&self, id: &ProfileId, token: &ProfileId) -> Result<(), String> {
