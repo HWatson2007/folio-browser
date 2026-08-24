@@ -93,6 +93,7 @@ let historyPage = 0;
 const HISTORY_PAGE_SIZE = 200;
 let historyQuery = "";
 let historySearchSeq = 0;
+let historyDirty = false;
 let downloadEntries: DownloadEntry[] = [];
 let historyOpen = false;
 let downloadsOpen = false;
@@ -399,7 +400,12 @@ async function openHistory(): Promise<void> {
   historyPanel.setAttribute("aria-hidden", "false");
   historyPanel.classList.add("is-open");
   await invoke("set_content_visible", { visible: false });
-  await refreshHistory();
+  // Lazy refresh: if data was dirtied while the panel was open, re-fetch;
+  // otherwise a first open or a page/search change already refreshes.
+  if (historyDirty || historyTotal === 0) {
+    historyDirty = false;
+    await refreshHistory();
+  }
   historySearch.focus();
 }
 
@@ -542,7 +548,12 @@ window.addEventListener("resize", syncContentOffset);
 void listen<NavigationEvent>("browser:navigation", ({ payload }) => {
   addressInput.value = payload.url;
   loadIndicator.classList.toggle("is-loading", payload.status !== "completed");
-  if (historyOpen) void refreshHistory();
+  if (historyOpen) {
+    // Fullscreen ledger covers the content webview; do not re-query or
+    // re-render on every attempted/started/completed event. Mark dirty
+    // and lazily refresh on next openHistory().
+    historyDirty = true;
+  }
 });
 
 void listen<string>("browser:popup-requested", ({ payload }) => {
