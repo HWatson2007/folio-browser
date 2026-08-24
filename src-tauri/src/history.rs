@@ -219,6 +219,29 @@ impl HistoryStore {
 
     pub const MAX_PAGE_LIMIT: u64 = 200;
 
+    pub fn for_each_entry<F>(&self, mut callback: F) -> Result<usize, String>
+    where
+        F: FnMut(HistoryEntry) -> Result<(), String>,
+    {
+        let connection = self.connection.lock().map_err(|error| error.to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT id, attempted_at, updated_at, url, title, status, source,
+                        submitted_input, search_query, search_url
+                 FROM history_entries
+                 ORDER BY attempted_at DESC, id DESC",
+            )
+            .map_err(|error| error.to_string())?;
+        let mut rows = statement.query([]).map_err(|error| error.to_string())?;
+        let mut count = 0usize;
+        while let Some(row) = rows.next().map_err(|error| error.to_string())? {
+            let entry = Self::entry_from_row(row)?;
+            callback(entry)?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
     pub fn entries_newest_first(&self) -> Result<Vec<HistoryEntry>, String> {
         let connection = self.connection.lock().map_err(|error| error.to_string())?;
         let mut statement = connection
