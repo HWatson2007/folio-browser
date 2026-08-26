@@ -12,6 +12,7 @@ export default defineConfig({
       input: {
         main: "index.html",
         picker: "picker.html",
+        blank: "blank.html",
       },
     },
   },

@@ -1,5 +1,10 @@
 const COMMANDS: &[&str] = &[
     // browser chrome
+    "get_tabs",
+    "create_tab",
+    "activate_tab",
+    "cycle_tab",
+    "close_tab",
     "navigate",
     "navigate_home",
     "go_back",
@@ -8,6 +13,7 @@ const COMMANDS: &[&str] = &[
     "current_url",
     "set_content_visible",
     "set_content_offset",
+    "set_tab_overlay_height",
     "get_history",
     "get_history_page",
     "export_history",

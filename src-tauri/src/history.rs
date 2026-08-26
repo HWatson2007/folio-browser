@@ -1,6 +1,7 @@
 use rusqlite::{Connection, Row, params};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     path::Path,
     sync::Mutex,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -41,7 +42,7 @@ pub struct PendingNavigation {
 
 pub struct HistoryStore {
     connection: Mutex<Connection>,
-    pending: Mutex<Option<PendingNavigation>>,
+    pending: Mutex<HashMap<u64, PendingNavigation>>,
 }
 
 impl NavigationStatus {
@@ -102,20 +103,32 @@ impl HistoryStore {
 
         Ok(Self {
             connection: Mutex::new(connection),
-            pending: Mutex::new(None),
+            pending: Mutex::new(HashMap::new()),
         })
     }
 
-    pub fn set_pending(&self, pending: PendingNavigation) -> Result<(), String> {
-        *self.pending.lock().map_err(|error| error.to_string())? = Some(pending);
+    pub fn set_pending(&self, tab_id: u64, pending: PendingNavigation) -> Result<(), String> {
+        self.pending
+            .lock()
+            .map_err(|error| error.to_string())?
+            .insert(tab_id, pending);
         Ok(())
     }
 
-    pub fn record_attempt(&self, url: &str) -> Result<HistoryEntry, String> {
+    pub fn clear_pending(&self, tab_id: u64) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.remove(&tab_id);
+        }
+    }
+
+    pub fn record_attempt(&self, tab_id: u64, url: &str) -> Result<HistoryEntry, String> {
         let context = {
             let mut pending = self.pending.lock().map_err(|error| error.to_string())?;
-            if pending.as_ref().is_some_and(|item| item.target_url == url) {
-                pending.take()
+            if pending
+                .get(&tab_id)
+                .is_some_and(|item| item.target_url == url)
+            {
+                pending.remove(&tab_id)
             } else {
                 None
             }
@@ -423,6 +436,50 @@ mod tests {
     use super::*;
 
     #[test]
+    fn keeps_pending_navigation_context_isolated_by_tab() {
+        let directory = std::env::temp_dir().join(format!(
+            "folio-browser-history-tabs-test-{}-{}",
+            std::process::id(),
+            unix_millis()
+        ));
+        let path = directory.join("history.sqlite3");
+        let history = HistoryStore::open(&path).unwrap();
+        history
+            .set_pending(
+                1,
+                PendingNavigation {
+                    target_url: "https://one.example/".to_owned(),
+                    source: "address".to_owned(),
+                    submitted_input: Some("one.example".to_owned()),
+                    search_query: None,
+                    search_url: None,
+                },
+            )
+            .unwrap();
+        history
+            .set_pending(
+                2,
+                PendingNavigation {
+                    target_url: "https://two.example/".to_owned(),
+                    source: "popup".to_owned(),
+                    submitted_input: None,
+                    search_query: None,
+                    search_url: None,
+                },
+            )
+            .unwrap();
+
+        let second = history.record_attempt(2, "https://two.example/").unwrap();
+        let first = history.record_attempt(1, "https://one.example/").unwrap();
+        assert_eq!(second.source, "popup");
+        assert_eq!(first.source, "address");
+        assert_eq!(first.submitted_input.as_deref(), Some("one.example"));
+
+        drop(history);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn persists_history_entries_and_updates_by_stable_id() {
         let directory = std::env::temp_dir().join(format!(
             "folio-browser-history-test-{}-{}",
@@ -433,8 +490,8 @@ mod tests {
 
         let first = {
             let history = HistoryStore::open(&path).unwrap();
-            let first = history.record_attempt("https://example.com/").unwrap();
-            let second = history.record_attempt("https://example.com/").unwrap();
+            let first = history.record_attempt(1, "https://example.com/").unwrap();
+            let second = history.record_attempt(1, "https://example.com/").unwrap();
 
             // A late event from the first visit must not update the newer visit to the same URL.
             history

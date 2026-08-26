@@ -9,9 +9,19 @@
   <body>
     <main id="app">
       <header class="browser-bar" aria-label="Browser controls">
-        <div class="brand" aria-label="Folio Browser">
-          <span class="brand-mark">F</span>
-          <span class="brand-name">Folio</span>
+        <div class="browser-brand">
+          <div id="tab-switcher" class="tab-switcher">
+            <div id="brand-trigger" class="brand-trigger" aria-label="Open tabs" aria-expanded="false" aria-controls="tab-overview">
+              <span class="brand-mark">F</span>
+              <span class="brand-name">Folio</span>
+              <button id="new-tab-button" class="new-tab-button" type="button" title="New tab (Ctrl+T)" aria-label="New tab">
+                <span class="new-tab-glyph" aria-hidden="true">×</span>
+              </button>
+            </div>
+            <section id="tab-overview" class="tab-overview" aria-label="Open tabs" aria-hidden="true">
+              <div id="tab-list" class="tab-list"></div>
+            </section>
+          </div>
           <span id="profile-badge" class="profile-badge" title="Current profile"></span>
         </div>
 

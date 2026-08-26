@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { save } from "@tauri-apps/plugin-dialog";
 import "./styles.css";
 
@@ -24,9 +25,19 @@ interface HistoryPage {
 }
 
 interface NavigationEvent {
+  tabId: number;
   url: string;
   status: NavigationStatus;
   title: string | null;
+}
+
+interface TabSummary {
+  id: number;
+  title: string;
+  url: string;
+  favicon: string | null;
+  loading: boolean;
+  active: boolean;
 }
 
 type DownloadStatus = "requested" | "downloading" | "completed" | "failed" | "canceled" | "interrupted";
@@ -65,6 +76,11 @@ const byId = <T extends HTMLElement>(id: string): T => {
 
 const addressForm = byId<HTMLFormElement>("address-form");
 const addressInput = byId<HTMLInputElement>("address-input");
+const tabSwitcher = byId<HTMLElement>("tab-switcher");
+const brandTrigger = byId<HTMLElement>("brand-trigger");
+const newTabButton = byId<HTMLButtonElement>("new-tab-button");
+const tabOverview = byId<HTMLElement>("tab-overview");
+const tabList = byId<HTMLElement>("tab-list");
 const historyButton = byId<HTMLButtonElement>("history-button");
 const historyPanel = byId<HTMLElement>("history-panel");
 const downloadsButton = byId<HTMLButtonElement>("downloads-button");
@@ -86,6 +102,13 @@ const profileBadge = byId<HTMLElement>("profile-badge");
 const toast = byId<HTMLElement>("toast");
 
 let profileSlug = "profile";
+let tabs: TabSummary[] = [];
+let activeTabId: number | null = null;
+let activeTabUrl = "";
+let tabOverviewOpen = false;
+let blankTabFocusPending = false;
+let blankTabPreviousId: number | null = null;
+let tabCloseTimer: number | undefined;
 
 let historyEntries: HistoryEntry[] = [];
 let historyTotal = 0;
@@ -120,6 +143,131 @@ function showToast(message: string): void {
   toast.classList.add("is-visible");
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => toast.classList.remove("is-visible"), 2800);
+}
+
+function tabFallback(tab: TabSummary): HTMLElement {
+  const fallback = document.createElement("span");
+  fallback.className = "tab-favicon-fallback";
+  fallback.setAttribute("aria-hidden", "true");
+  const first = Array.from(tab.title.trim() || "F")[0] ?? "F";
+  fallback.textContent = first.toLocaleUpperCase();
+  return fallback;
+}
+
+function renderTabs(): void {
+  tabList.replaceChildren();
+  for (const tab of tabs) {
+    const row = document.createElement("div");
+    row.className = `tab-pill${tab.active ? " is-active" : ""}${tab.loading ? " tab-loading" : ""}`;
+
+    const main = document.createElement("button");
+    main.type = "button";
+    main.className = "tab-main";
+    main.title = tab.url || "New tab";
+    main.setAttribute("aria-label", `Switch to ${tab.title}`);
+    if (tab.active) main.setAttribute("aria-current", "page");
+
+    if (tab.favicon) {
+      const icon = document.createElement("img");
+      icon.className = "tab-favicon";
+      icon.src = tab.favicon;
+      icon.alt = "";
+      icon.addEventListener("error", () => icon.replaceWith(tabFallback(tab)), { once: true });
+      main.append(icon);
+    } else {
+      main.append(tabFallback(tab));
+    }
+
+    const title = document.createElement("span");
+    title.className = "tab-title";
+    title.textContent = tab.title || "New Tab";
+    main.append(title);
+    main.addEventListener("click", () => {
+      closeTabOverview(true);
+      void invoke("activate_tab", { id: tab.id }).catch((error) => showToast(String(error)));
+    });
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "tab-close";
+    close.textContent = "×";
+    close.title = `Close ${tab.title}`;
+    close.setAttribute("aria-label", `Close ${tab.title}`);
+    close.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void invoke("close_tab", { id: tab.id }).catch((error) => showToast(String(error)));
+    });
+
+    row.append(main, close);
+    tabList.append(row);
+  }
+}
+
+function applyTabs(nextTabs: TabSummary[]): void {
+  tabs = nextTabs;
+  const active = tabs.find((tab) => tab.active) ?? null;
+  const changed = active?.id !== activeTabId || (active?.url ?? "") !== activeTabUrl;
+  activeTabId = active?.id ?? null;
+  activeTabUrl = active?.url ?? "";
+  if (changed) addressInput.value = activeTabUrl;
+  loadIndicator.classList.toggle("is-loading", active?.loading ?? false);
+  if (blankTabFocusPending && active && active.id !== blankTabPreviousId && !active.url) {
+    blankTabFocusPending = false;
+    blankTabPreviousId = null;
+    addressInput.value = "";
+    void getCurrentWebview()
+      .setFocus()
+      .catch(() => undefined)
+      .finally(() => addressInput.focus());
+  }
+  if (tabOverviewOpen) {
+    renderTabs();
+    window.requestAnimationFrame(syncTabOverlayHeight);
+  }
+}
+
+function syncTabOverlayHeight(): void {
+  if (!tabOverviewOpen) return;
+  const height = Math.ceil(tabOverview.getBoundingClientRect().bottom + 12);
+  void invoke("set_tab_overlay_height", { height }).catch((error) => showToast(String(error)));
+}
+
+function openTabOverview(): void {
+  window.clearTimeout(tabCloseTimer);
+  if (tabOverviewOpen || historyOpen || downloadsOpen) return;
+  tabOverviewOpen = true;
+  renderTabs();
+  tabSwitcher.classList.add("is-open");
+  brandTrigger.setAttribute("aria-expanded", "true");
+  tabOverview.setAttribute("aria-hidden", "false");
+  window.requestAnimationFrame(syncTabOverlayHeight);
+}
+
+function closeTabOverview(immediate = false): void {
+  window.clearTimeout(tabCloseTimer);
+  const close = (): void => {
+    if (!tabOverviewOpen) return;
+    tabOverviewOpen = false;
+    tabSwitcher.classList.remove("is-open");
+    brandTrigger.setAttribute("aria-expanded", "false");
+    tabOverview.setAttribute("aria-hidden", "true");
+    void invoke("set_tab_overlay_height", { height: null }).catch((error) => showToast(String(error)));
+  };
+  if (immediate) close();
+  else tabCloseTimer = window.setTimeout(close, 190);
+}
+
+async function createBlankTab(): Promise<void> {
+  closeTabOverview(true);
+  blankTabFocusPending = true;
+  blankTabPreviousId = activeTabId;
+  try {
+    await invoke<void>("create_tab", { url: null });
+  } catch (error) {
+    blankTabFocusPending = false;
+    blankTabPreviousId = null;
+    showToast(String(error));
+  }
 }
 
 function formatDay(timestamp: number): string {
@@ -394,6 +542,7 @@ async function refreshHistory(): Promise<void> {
 }
 
 async function openHistory(): Promise<void> {
+  closeTabOverview(true);
   if (downloadsOpen) await closeDownloads();
   historyOpen = true;
   historyButton.setAttribute("aria-expanded", "true");
@@ -419,6 +568,7 @@ async function closeHistory(): Promise<void> {
 }
 
 async function openDownloads(): Promise<void> {
+  closeTabOverview(true);
   if (historyOpen) await closeHistory();
   downloadsOpen = true;
   downloadsButton.setAttribute("aria-expanded", "true");
@@ -458,6 +608,13 @@ function syncContentOffset(): void {
     void invoke("set_content_offset", { offset: toolbarHeight });
   }, 80);
 }
+
+tabSwitcher.addEventListener("pointerenter", openTabOverview);
+tabSwitcher.addEventListener("pointerleave", () => closeTabOverview());
+newTabButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  void createBlankTab();
+});
 
 addressForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -514,8 +671,21 @@ byId<HTMLButtonElement>("export-json-button").addEventListener("click", () => ex
 byId<HTMLButtonElement>("export-csv-button").addEventListener("click", () => exportHistory("csv"));
 
 window.addEventListener("keydown", (event) => {
-  if (event.ctrlKey && event.key.toLocaleLowerCase() === "l") {
+  if (event.ctrlKey && event.key.toLocaleLowerCase() === "t") {
     event.preventDefault();
+    void createBlankTab();
+  } else if (event.ctrlKey && event.key.toLocaleLowerCase() === "w") {
+    event.preventDefault();
+    if (activeTabId != null) {
+      void invoke("close_tab", { id: activeTabId }).catch((error) => showToast(String(error)));
+    }
+  } else if (event.ctrlKey && event.key === "Tab") {
+    event.preventDefault();
+    closeTabOverview(true);
+    void invoke("cycle_tab", { direction: event.shiftKey ? -1 : 1 }).catch((error) => showToast(String(error)));
+  } else if (event.ctrlKey && event.key.toLocaleLowerCase() === "l") {
+    event.preventDefault();
+    closeTabOverview(true);
     addressInput.focus();
     addressInput.select();
   } else if (event.ctrlKey && event.key.toLocaleLowerCase() === "h") {
@@ -540,14 +710,22 @@ window.addEventListener("keydown", (event) => {
     void closeHistory();
   } else if (event.key === "Escape" && downloadsOpen) {
     void closeDownloads();
+  } else if (event.key === "Escape" && tabOverviewOpen) {
+    closeTabOverview(true);
   }
 });
 
-window.addEventListener("resize", syncContentOffset);
+window.addEventListener("resize", () => {
+  syncContentOffset();
+  if (tabOverviewOpen) window.requestAnimationFrame(syncTabOverlayHeight);
+});
 
 void listen<NavigationEvent>("browser:navigation", ({ payload }) => {
-  addressInput.value = payload.url;
-  loadIndicator.classList.toggle("is-loading", payload.status !== "completed");
+  if (payload.tabId === activeTabId) {
+    addressInput.value = payload.url;
+    activeTabUrl = payload.url;
+    loadIndicator.classList.toggle("is-loading", payload.status !== "completed");
+  }
   if (historyOpen) {
     // Fullscreen ledger covers the content webview; do not re-query or
     // re-render on every attempted/started/completed event. Mark dirty
@@ -556,8 +734,51 @@ void listen<NavigationEvent>("browser:navigation", ({ payload }) => {
   }
 });
 
+void listen<TabSummary[]>("browser:tabs", ({ payload }) => applyTabs(payload));
+
+void listen<string>("browser:tab-error", ({ payload }) => {
+  blankTabFocusPending = false;
+  blankTabPreviousId = null;
+  showToast(payload);
+});
+
+void listen<string>("browser:shortcut", ({ payload }) => {
+  switch (payload) {
+    case "new-tab":
+      void createBlankTab();
+      break;
+    case "close-tab":
+      if (activeTabId != null) {
+        void invoke("close_tab", { id: activeTabId }).catch((error) => showToast(String(error)));
+      }
+      break;
+    case "next-tab":
+    case "previous-tab":
+      closeTabOverview(true);
+      void invoke("cycle_tab", { direction: payload === "next-tab" ? 1 : -1 }).catch((error) => showToast(String(error)));
+      break;
+    case "focus-address":
+      closeTabOverview(true);
+      void getCurrentWebview().setFocus().then(() => {
+        addressInput.focus();
+        addressInput.select();
+      });
+      break;
+    case "reload":
+      void invoke("reload");
+      break;
+    case "back":
+      void invoke("go_back");
+      break;
+    case "forward":
+      void invoke("go_forward");
+      break;
+  }
+});
+
 void listen<string>("browser:popup-requested", ({ payload }) => {
-  void invoke("navigate", { input: payload, source: "popup" });
+  closeTabOverview(true);
+  void invoke<void>("create_tab", { url: payload }).catch((error) => showToast(String(error)));
 });
 
 void listen<DownloadEntry>("browser:download", ({ payload }) => {
@@ -572,9 +793,9 @@ void listen<DownloadEntry>("browser:download", ({ payload }) => {
   }
 });
 
-void invoke<string>("current_url").then((url) => {
-  addressInput.value = url;
-});
+void invoke<TabSummary[]>("get_tabs")
+  .then(applyTabs)
+  .catch((error) => showToast(String(error)));
 void invoke<ProfileSummary>("get_current_profile").then((profile) => {
   profileBadge.textContent = profile.name;
   profileBadge.title = `Current profile: ${profile.name}`;

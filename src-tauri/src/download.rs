@@ -461,6 +461,7 @@ mod platform {
         app: tauri::AppHandle,
         manager: Arc<DownloadManager>,
     ) -> Result<(), String> {
+        let source_webview_label = webview.label().to_owned();
         webview
             .with_webview(move |platform| {
                 let controller = platform.controller();
@@ -500,7 +501,7 @@ mod platform {
                         .ok()
                         .filter(|value| !value.is_empty());
                     let source_page_url = app_for_start
-                        .get_webview("content")
+                        .get_webview(&source_webview_label)
                         .and_then(|webview| webview.url().ok())
                         .map(|url| url.to_string());
                     let mut suggested_path = PWSTR::null();

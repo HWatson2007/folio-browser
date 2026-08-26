@@ -1,15 +1,17 @@
 # Folio Browser
 
-Folio is a lightweight, single-tab Windows browser built with Rust, Tauri 2, TypeScript, HTML, CSS, and the installed Microsoft Edge WebView2 Runtime.
+Folio is a lightweight multi-tab Windows browser built with Rust, Tauri 2, TypeScript, HTML, CSS, and the installed Microsoft Edge WebView2 Runtime.
 
 ## Features
 
-- One native window and one remote browsing tab per profile
+- Multiple live tabs in one native window, with page state preserved while switching
+- Liquid-glass tab switcher with website favicons, newest-first ordering, and Maple Mono NF CN labels
+- New tabs open blank with address focus; each profile launch still starts at DuckDuckGo
+- Popup links open in a foreground tab
 - **Multi-profile**: fully isolated profiles that run concurrently (one process per profile)
 - Profile picker shown on every launch; each profile keeps its own cookies, cache, and history
 - Address bar with HTTP/HTTPS navigation and DuckDuckGo search
 - Back, forward, reload, and home controls
-- Popup links redirected into the current tab
 - Durable recording of every top-level navigation attempt
 - Exact DuckDuckGo query recording, including searches submitted on the DuckDuckGo page
 - Searchable local history ledger
@@ -54,9 +56,13 @@ transactions. Exported files are complete snapshots queried from that database. 
 launch after this feature migrates an existing single-profile install into a `Default`
 profile automatically.
 
-Remote websites run in a separate child webview without Tauri permissions. The picker can
+Remote websites run in separate child webviews without Tauri permissions. The picker can
 manage profiles but cannot navigate the web or read any profile's history; the trusted local
-chrome webview can invoke browser, history, and export commands for its own profile only.
+chrome webview can invoke tab, browser, history, and export commands for its own profile only.
+
+The tab switcher supports `Ctrl+T`, `Ctrl+W`, `Ctrl+Tab`, and `Ctrl+Shift+Tab`. Closing the
+last tab closes that profile's browser window. Open tabs are intentionally not restored after
+restart.
 
 ## Development
 
@@ -101,7 +107,7 @@ src-tauri/src/
     history.rs   # per-profile browsing SQLite ledger
     download.rs  # WebView2 downloads and per-profile download ledger
     picker.rs    # launcher process and profile commands
-    browser.rs   # browser process, chrome + content webviews
+    browser.rs   # browser process, chrome + dynamic per-tab content webviews
 src/
     main.ts      # browser chrome UI
     picker.ts    # profile picker UI
@@ -109,4 +115,7 @@ src/
 
 Application commands are gated by Tauri's ACL: `src-tauri/capabilities/picker.json`
 restricts the picker to profile management, and `default.json` restricts the chrome to
-browser, history, and export commands. The remote content webview has no capabilities.
+tab, browser, history, and export commands. Remote content webviews have no capabilities.
+
+The bundled Maple Mono NF CN webfont is distributed under the SIL Open Font License 1.1;
+see `assets/MapleMono-LICENSE.txt`.

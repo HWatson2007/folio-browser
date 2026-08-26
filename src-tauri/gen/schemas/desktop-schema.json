@@ -177,10 +177,22 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the activate_tab command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-activate-tab",
+          "markdownDescription": "Enables the activate_tab command without any pre-configured scope."
+        },
+        {
           "description": "Enables the cancel_download command without any pre-configured scope.",
           "type": "string",
           "const": "allow-cancel-download",
           "markdownDescription": "Enables the cancel_download command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the close_tab command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-close-tab",
+          "markdownDescription": "Enables the close_tab command without any pre-configured scope."
         },
         {
           "description": "Enables the create_profile command without any pre-configured scope.",
@@ -189,10 +201,22 @@
           "markdownDescription": "Enables the create_profile command without any pre-configured scope."
         },
         {
+          "description": "Enables the create_tab command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-tab",
+          "markdownDescription": "Enables the create_tab command without any pre-configured scope."
+        },
+        {
           "description": "Enables the current_url command without any pre-configured scope.",
           "type": "string",
           "const": "allow-current-url",
           "markdownDescription": "Enables the current_url command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the cycle_tab command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cycle-tab",
+          "markdownDescription": "Enables the cycle_tab command without any pre-configured scope."
         },
         {
           "description": "Enables the delete_profile command without any pre-configured scope.",
@@ -235,6 +259,12 @@
           "type": "string",
           "const": "allow-get-migration-error",
           "markdownDescription": "Enables the get_migration_error command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_tabs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-tabs",
+          "markdownDescription": "Enables the get_tabs command without any pre-configured scope."
         },
         {
           "description": "Enables the go_back command without any pre-configured scope.",
@@ -303,10 +333,22 @@
           "markdownDescription": "Enables the set_content_visible command without any pre-configured scope."
         },
         {
+          "description": "Enables the set_tab_overlay_height command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-tab-overlay-height",
+          "markdownDescription": "Enables the set_tab_overlay_height command without any pre-configured scope."
+        },
+        {
           "description": "Enables the show_download_in_folder command without any pre-configured scope.",
           "type": "string",
           "const": "allow-show-download-in-folder",
           "markdownDescription": "Enables the show_download_in_folder command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the activate_tab command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-activate-tab",
+          "markdownDescription": "Denies the activate_tab command without any pre-configured scope."
         },
         {
           "description": "Denies the cancel_download command without any pre-configured scope.",
@@ -315,16 +357,34 @@
           "markdownDescription": "Denies the cancel_download command without any pre-configured scope."
         },
         {
+          "description": "Denies the close_tab command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-close-tab",
+          "markdownDescription": "Denies the close_tab command without any pre-configured scope."
+        },
+        {
           "description": "Denies the create_profile command without any pre-configured scope.",
           "type": "string",
           "const": "deny-create-profile",
           "markdownDescription": "Denies the create_profile command without any pre-configured scope."
         },
         {
+          "description": "Denies the create_tab command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-tab",
+          "markdownDescription": "Denies the create_tab command without any pre-configured scope."
+        },
+        {
           "description": "Denies the current_url command without any pre-configured scope.",
           "type": "string",
           "const": "deny-current-url",
           "markdownDescription": "Denies the current_url command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cycle_tab command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cycle-tab",
+          "markdownDescription": "Denies the cycle_tab command without any pre-configured scope."
         },
         {
           "description": "Denies the delete_profile command without any pre-configured scope.",
@@ -367,6 +427,12 @@
           "type": "string",
           "const": "deny-get-migration-error",
           "markdownDescription": "Denies the get_migration_error command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_tabs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-tabs",
+          "markdownDescription": "Denies the get_tabs command without any pre-configured scope."
         },
         {
           "description": "Denies the go_back command without any pre-configured scope.",
@@ -433,6 +499,12 @@
           "type": "string",
           "const": "deny-set-content-visible",
           "markdownDescription": "Denies the set_content_visible command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_tab_overlay_height command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-tab-overlay-height",
+          "markdownDescription": "Denies the set_tab_overlay_height command without any pre-configured scope."
         },
         {
           "description": "Denies the show_download_in_folder command without any pre-configured scope.",
