@@ -1,0 +1,187 @@
+.profile-badge {
+  max-width: 150px;
+  padding: 2px 10px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--muted);
+  font-family: "Times New Roman", Times, serif;
+  font-size: 12px;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 25px;
+  font-style: italic;
+  line-height: 1;
+}
+
+.brand-name {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+}
+
+.nav-controls {
+  display: flex;
+  gap: 3px;
+}
+
+.icon-button,
+.section-button,
+.close-button,
+.export-actions button {
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+}
+
+.icon-button {
+  min-width: 42px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 2px;
+  color: #4d4942;
+  font-size: 12px;
+  letter-spacing: 0.025em;
+}
+
+.icon-button:hover,
+.section-button:hover,
+.close-button:hover {
+  border-color: var(--rule);
+  background: rgba(89, 79, 66, 0.06);
+}
+
+.address-form {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  min-width: 0;
+  height: 43px;
+  padding-left: 13px;
+  border: 1px solid #aaa194;
+  border-radius: 2px;
+  background: #faf8f2;
+  box-shadow: inset 0 1px 3px rgba(73, 62, 49, 0.08);
+}
+
+.address-form:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(138, 61, 47, 0.18);
+}
+
+.load-indicator {
+  width: 8px;
+  height: 8px;
+  margin-right: 10px;
+  border: 1px solid #6f695f;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.load-indicator.is-loading {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(138, 61, 47, 0.12);
+  animation: pulse 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+  to {
+    opacity: 0.35;
+  }
+}
+
+#address-input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: #34312d;
+  background: transparent;
+  font-family: "Source Han Serif SC", "Source Serif 4", "Noto Serif CJK SC", Georgia, serif;
+  font-size: 14px;
+}
+
+#address-input::placeholder {
+  color: #938b7e;
+  font-style: italic;
+}
+
+.go-button {
+  align-self: stretch;
+  min-width: 54px;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  background: transparent;
+  color: var(--accent-dark);
+  cursor: pointer;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 16px;
+  font-style: italic;
+}
+
+.go-button:hover {
+  background: var(--paper-deep);
+}
+
+.section-buttons {
+  display: flex;
+  align-items: center;
+  min-width: max-content;
+}
+
+.section-button {
+  height: 38px;
+  padding: 0 12px;
+  border-left-color: var(--rule);
+  border-radius: 0;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 15px;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+}
+
+.section-button + .section-button {
+  margin-left: -1px;
+}
+
+.section-button[aria-expanded="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.section-count {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  padding: 0 5px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fffaf0;
+  font-family: Georgia, serif;
+  font-size: 10px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.section-count[hidden] {
+  display: none;
+}

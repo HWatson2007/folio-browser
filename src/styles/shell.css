@@ -1,0 +1,26 @@
+.toast {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 40;
+  max-width: min(420px, calc(100vw - 44px));
+  padding: 11px 15px;
+  border: 1px solid var(--ink);
+  background: #fffaf0;
+  box-shadow: 3px 4px 0 rgba(45, 40, 33, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (max-width: 850px) {
+  .profile-badge {
+    display: none;
+  }
+}

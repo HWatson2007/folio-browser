@@ -1,0 +1,129 @@
+@media (max-width: 850px) {
+  :root {
+    --toolbar-height: 122px;
+  }
+
+  .browser-bar {
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: 42px 48px;
+    gap: 8px;
+    height: var(--toolbar-height);
+    padding: 10px 12px 12px;
+  }
+
+  .brand-name {
+    display: none;
+  }
+
+  .brand {
+    min-width: 38px;
+  }
+
+  .browser-brand {
+    width: auto;
+  }
+
+  .tab-switcher {
+    flex-basis: 78px;
+    width: 78px;
+  }
+
+  .brand-trigger {
+    grid-template-columns: 38px 30px;
+  }
+
+  .brand-open {
+    grid-column: 1;
+    grid-template-columns: 38px;
+  }
+
+  .brand-open .brand-name {
+    display: none;
+  }
+
+  .tab-overview {
+    width: min(370px, calc(100vw - 24px));
+  }
+
+  .nav-controls {
+    justify-self: start;
+  }
+
+  .section-buttons {
+    justify-self: end;
+  }
+
+  .address-form {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .history-panel,
+  .downloads-panel {
+    padding: 28px 18px 60px;
+  }
+
+  .history-tools {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .history-search-label {
+    display: none;
+  }
+
+  .export-actions button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 560px) {
+  .icon-button {
+    min-width: 0;
+    padding: 0 5px;
+    font-size: 11px;
+  }
+
+  .ledger-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .history-entry {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .section-button {
+    padding: 0 7px;
+    font-size: 13px;
+  }
+
+  .download-entry {
+    grid-template-columns: 36px minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+  }
+
+  .download-marker {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+
+  .download-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

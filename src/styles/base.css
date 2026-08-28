@@ -1,0 +1,94 @@
+@font-face {
+  font-family: "Maple Mono NF CN";
+  src: url("../assets/MapleMono-NF-CN-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  color: #292722;
+  background: transparent;
+  font-family: "Source Han Serif SC", "Source Serif 4", "Noto Serif CJK SC", Georgia, serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --paper: #f3f1eb;
+  --paper-deep: #e8e3d8;
+  --ink: #292722;
+  --muted: #777064;
+  --rule: #c8c0b2;
+  --accent: #8a3d2f;
+  --accent-dark: #602a21;
+  --toolbar-height: 76px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.browser-bar {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: clamp(230px, 22vw, 300px) max-content minmax(180px, 1fr) max-content;
+  align-items: center;
+  gap: 14px;
+  height: var(--toolbar-height);
+  padding: 11px 18px;
+  border-bottom: 1px solid #9f978a;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0)),
+    var(--paper);
+  box-shadow: 0 3px 12px rgba(57, 50, 42, 0.11);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 116px;
+}
+
+.browser-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
