@@ -611,6 +611,13 @@ function syncContentOffset(): void {
 
 tabSwitcher.addEventListener("pointerenter", openTabOverview);
 tabSwitcher.addEventListener("pointerleave", () => closeTabOverview());
+brandTrigger.addEventListener("click", openTabOverview);
+brandTrigger.addEventListener("keydown", (event) => {
+  if (event.target !== brandTrigger || (event.key !== "Enter" && event.key !== " ")) return;
+  event.preventDefault();
+  if (tabOverviewOpen) closeTabOverview(true);
+  else openTabOverview();
+});
 newTabButton.addEventListener("click", (event) => {
   event.stopPropagation();
   void createBlankTab();

@@ -3,6 +3,8 @@ dist/
 src-tauri/target/
 *.log
 .DS_Store
+.idea/
+trash(do not delete)/
 folio-history-*.csv
 folio-history-*.json
 trash/

@@ -81,6 +81,10 @@ struct TabsState {
 
 struct TabManager {
     state: Mutex<TabsState>,
+    // Native child webviews are mutated from both IPC callbacks and tab-creation workers.
+    // Keep activation/hide/show/close transitions atomic so concurrent requests cannot leave
+    // multiple content webviews visible or disagree with `active_id`.
+    view_lock: Mutex<()>,
     history: Arc<HistoryStore>,
     downloads: Arc<DownloadManager>,
     webview_dir: PathBuf,
@@ -100,6 +104,7 @@ impl TabManager {
                 active_id: None,
                 tabs: Vec::new(),
             }),
+            view_lock: Mutex::new(()),
             history,
             downloads,
             webview_dir,
@@ -516,7 +521,10 @@ fn attach_favicon_handler(
                                     break;
                                 }
                                 bytes.extend_from_slice(&buffer[..read as usize]);
-                                if bytes.len() > 4 * 1024 * 1024 {
+                                // This data URI is retained in tab state and included in every
+                                // tab-list IPC event. Reject abnormally large favicons before
+                                // base64 encoding multiplies their memory and transport cost.
+                                if bytes.len() > 256 * 1024 {
                                     return Ok(());
                                 }
                             }
@@ -603,6 +611,7 @@ fn open_content_tab(
     layout: &Arc<LayoutState>,
     initial: Option<(tauri::Url, Option<PendingNavigation>)>,
 ) -> Result<TabSummary, String> {
+    let view_guard = tabs.view_lock.lock().map_err(|error| error.to_string())?;
     let previous_active = tabs.active_id();
     let (tab_id, label) = tabs.reserve()?;
     let result = (|| -> Result<TabSummary, String> {
@@ -630,7 +639,8 @@ fn open_content_tab(
             .enable_clipboard_access()
             .background_color(Color(255, 255, 255, 255))
             .on_navigation(move |url| {
-                url.path() == "/blank.html" || matches!(url.scheme(), "http" | "https")
+                matches!(url.scheme(), "http" | "https")
+                    || (url.path() == "/blank.html" && matches!(url.scheme(), "tauri" | "asset"))
             })
             .on_new_window(move |url, _features| {
                 let _ = popup_handle.emit_to("chrome", "browser:popup-requested", url.to_string());
@@ -698,9 +708,10 @@ fn open_content_tab(
         }
         tabs.rollback(tab_id);
         if let Some(previous_active) = previous_active {
-            let _ = activate_tab_webview(app, tabs, layout, previous_active, true);
+            let _ = activate_tab_webview_locked(app, tabs, layout, previous_active, true);
         }
     }
+    drop(view_guard);
     result
 }
 
@@ -854,6 +865,17 @@ fn activate_tab_webview(
     id: u64,
     focus: bool,
 ) -> Result<(), String> {
+    let _view_guard = tabs.view_lock.lock().map_err(|error| error.to_string())?;
+    activate_tab_webview_locked(app, tabs, layout, id, focus)
+}
+
+fn activate_tab_webview_locked(
+    app: &tauri::AppHandle,
+    tabs: &TabManager,
+    layout: &LayoutState,
+    id: u64,
+    focus: bool,
+) -> Result<(), String> {
     let (old_label, new_label) = tabs.activate(id)?;
     if let Some(old_label) = old_label
         && old_label != new_label
@@ -957,6 +979,7 @@ fn close_tab(
     layout: State<'_, Arc<LayoutState>>,
     id: u64,
 ) -> Result<(), String> {
+    let _view_guard = tabs.view_lock.lock().map_err(|error| error.to_string())?;
     let (label, next_id, was_active) = tabs.remove(id)?;
     tabs.history.clear_pending(id);
     if let Some(webview) = app.get_webview(&label) {
@@ -970,7 +993,7 @@ fn close_tab(
             .map_err(|error| error.to_string());
     };
     if was_active {
-        activate_tab_webview(&app, &tabs, &layout, next_id, true)
+        activate_tab_webview_locked(&app, &tabs, &layout, next_id, true)
     } else {
         emit_tabs(&app, &tabs);
         Ok(())
@@ -991,7 +1014,11 @@ fn navigate(
     let (url, pending) = resolve_input(&input, &source)?;
     let (tab_id, content) = content_webview(&app, &tabs)?;
     tabs.history.set_pending(tab_id, pending)?;
-    content.navigate(url).map_err(|error| error.to_string())
+    if let Err(error) = content.navigate(url) {
+        tabs.history.clear_pending(tab_id);
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1008,7 +1035,11 @@ fn navigate_home(app: tauri::AppHandle, tabs: State<'_, Arc<TabManager>>) -> Res
             search_url: None,
         },
     )?;
-    content.navigate(url).map_err(|error| error.to_string())
+    if let Err(error) = content.navigate(url) {
+        tabs.history.clear_pending(tab_id);
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]

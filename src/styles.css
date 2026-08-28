@@ -119,6 +119,21 @@ input:focus-visible {
     transform 210ms ease;
 }
 
+.brand-open {
+  display: grid;
+  grid-column: 1 / 3;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
 .tab-switcher.is-open .brand-trigger {
   border-color: rgba(255, 255, 255, 0.7);
   background:
@@ -1282,7 +1297,12 @@ input:focus-visible {
     grid-template-columns: 38px 30px;
   }
 
-  .brand-trigger .brand-name {
+  .brand-open {
+    grid-column: 1;
+    grid-template-columns: 38px;
+  }
+
+  .brand-open .brand-name {
     display: none;
   }
 
